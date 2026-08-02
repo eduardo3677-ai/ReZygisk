@@ -11,8 +11,6 @@
 #define ZYGISK_OPTION_FORCE_DENYLIST_UNMOUNT 0
 #define ZYGISK_OPTION_DLCLOSE_MODULE_LIBRARY 1
 
-struct zygisk_compat_api_table;
-
 struct zygisk_compat_module_abi {
   long api_version;
   void *module_this;
@@ -76,17 +74,10 @@ void zygisk_compat_set_callbacks(
   int (*connect_companion)(void *),
   void (*set_option)(void *, int),
   int (*get_module_dir)(void *),
-  uint32_t (*get_flags)(void *)
+  uint32_t (*get_flags)(void)
 );
 
-struct zygisk_compat_api_table *zygisk_compat_get_api_table(void);
-
 size_t zygisk_compat_get_count(void);
-
-bool zygisk_compat_is_registered(size_t idx);
-
-struct zygisk_compat_module_abi *zygisk_compat_get_abi(size_t idx);
-
 void zygisk_compat_reset(void);
 
 size_t zygisk_compat_call_entry(void *entry, JNIEnv *env);
@@ -97,7 +88,5 @@ void zygisk_compat_call_pre_server(void *args);
 void zygisk_compat_call_post_server(const void *args);
 
 bool zygisk_compat_is_unload_requested(void);
-
-void zygisk_compat_clear_unload(void);
 
 #endif

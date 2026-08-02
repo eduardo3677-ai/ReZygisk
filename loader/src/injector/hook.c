@@ -995,7 +995,7 @@ static bool load_modules_only(void) {
     api_connect_companion,
     (void (*)(void *, int))api_set_option,
     api_get_module_dir,
-    api_get_flags
+    (uint32_t (*)(void))api_get_flags
   );
 
   JNIEnv *env = get_jni_env();
