@@ -26,6 +26,54 @@ struct Context {
   size_t len;
 };
 
+#define PROCESS_CACHE_SIZE 256
+#define PROCESS_CACHE_HASH(uid) ((uid) % PROCESS_CACHE_SIZE)
+
+struct process_cache_entry {
+  uid_t uid;
+  uint32_t flags;
+  bool valid;
+};
+
+static struct process_cache_entry process_cache[PROCESS_CACHE_SIZE];
+
+static uint32_t process_cache_lookup(uid_t uid) {
+  size_t idx = PROCESS_CACHE_HASH(uid);
+  if (process_cache[idx].valid && process_cache[idx].uid == uid) {
+    return process_cache[idx].flags;
+  }
+
+  for (size_t i = 0; i < PROCESS_CACHE_SIZE; i++) {
+    if (process_cache[i].valid && process_cache[i].uid == uid) {
+      return process_cache[i].flags;
+    }
+  }
+
+  return 0;
+}
+
+static bool process_cache_contains(uid_t uid) {
+  size_t idx = PROCESS_CACHE_HASH(uid);
+  if (process_cache[idx].valid && process_cache[idx].uid == uid) {
+    return true;
+  }
+
+  for (size_t i = 0; i < PROCESS_CACHE_SIZE; i++) {
+    if (process_cache[i].valid && process_cache[i].uid == uid) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+static void process_cache_insert(uid_t uid, uint32_t flags) {
+  size_t idx = PROCESS_CACHE_HASH(uid);
+  process_cache[idx].uid = uid;
+  process_cache[idx].flags = flags;
+  process_cache[idx].valid = true;
+}
+
 #define PATH_MODULES_DIR "/data/adb/modules"
 #define TMP_PATH "/data/adb/rezygisk"
 #define CONTROLLER_SOCKET TMP_PATH "/init_monitor"
@@ -318,6 +366,10 @@ void zygiskd_start(char *restrict argv[]) {
   struct sigaction sa = { .sa_handler = SIG_IGN };
   sigaction(SIGPIPE, &sa, NULL);
 
+  for (size_t i = 0; i < PROCESS_CACHE_SIZE; i++) {
+    process_cache[i].valid = false;
+  }
+
   bool first_process = true;
   while (1) {
     int client_fd = accept(socket_fd, NULL, NULL);
@@ -376,40 +428,51 @@ void zygiskd_start(char *restrict argv[]) {
         }
 
         uint32_t flags = 0;
+        bool from_cache = false;
+
         if (first_process) {
           flags |= PROCESS_IS_FIRST_STARTED;
 
           first_process = false;
+        } else if (process_cache_contains(uid)) {
+          flags = process_cache_lookup(uid);
+          from_cache = true;
         }
 
-        if (uid_is_manager(uid)) {
-          flags |= PROCESS_IS_MANAGER;
-        } else {
-          if (uid_granted_root(uid)) {
-            flags |= PROCESS_GRANTED_ROOT;
+        if (!from_cache) {
+          if (uid_is_manager(uid)) {
+            flags |= PROCESS_IS_MANAGER;
+          } else {
+            if (uid_granted_root(uid)) {
+              flags |= PROCESS_GRANTED_ROOT;
+            }
+            if (uid_should_umount(uid, (const char *const)process)) {
+              flags |= PROCESS_ON_DENYLIST;
+            }
           }
-          if (uid_should_umount(uid, (const char *const)process)) {
-            flags |= PROCESS_ON_DENYLIST;
+
+          switch (impl.impl) {
+            case None: { break; }
+            case Multiple: { break; }
+            case KernelSU: {
+              flags |= PROCESS_ROOT_IS_KSU;
+
+              break;
+            }
+            case APatch: {
+              flags |= PROCESS_ROOT_IS_APATCH;
+
+              break;
+            }
+            case Magisk: {
+              flags |= PROCESS_ROOT_IS_MAGISK;
+
+              break;
+            }
           }
-        }
 
-        switch (impl.impl) {
-          case None: { break; }
-          case Multiple: { break; }
-          case KernelSU: {
-            flags |= PROCESS_ROOT_IS_KSU;
-
-            break;
-          }
-          case APatch: {
-            flags |= PROCESS_ROOT_IS_APATCH;
-
-            break;
-          }
-          case Magisk: {
-            flags |= PROCESS_ROOT_IS_MAGISK;
-
-            break;
+          if ((flags & PROCESS_IS_FIRST_STARTED) == 0) {
+            process_cache_insert(uid, flags);
           }
         }
 

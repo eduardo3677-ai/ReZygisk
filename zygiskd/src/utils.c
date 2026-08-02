@@ -177,12 +177,15 @@ int unix_listener_from_path(const char *restrict path) {
     return -1;
   }
 
-  int socket_fd = socket(AF_UNIX, SOCK_STREAM, 0);
+  int socket_fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
   if (socket_fd == -1) {
     LOGE("socket: %s", strerror(errno));
 
     return -1;
   }
+
+  int reuse = 1;
+  setsockopt(socket_fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
 
   struct sockaddr_un addr = {
     .sun_family = AF_UNIX
@@ -197,7 +200,7 @@ int unix_listener_from_path(const char *restrict path) {
     return -1;
   }
 
-  if (listen(socket_fd, 2) == -1) {
+  if (listen(socket_fd, 8) == -1) {
     LOGE("listen: %s", strerror(errno));
 
     close(socket_fd);
@@ -664,9 +667,6 @@ bool parse_mountinfo(const char *restrict pid, struct mountinfos *restrict mount
 }
 
 bool umount_root(struct root_impl impl) {
-  /* INFO: We are already in the target pid mount namespace, so actually,
-             when we use self here, we meant its pid.
-  */
   struct mountinfos mounts;
   if (!parse_mountinfo("self", &mounts)) {
     LOGE("Failed to parse mountinfo");
@@ -688,8 +688,12 @@ bool umount_root(struct root_impl impl) {
 
     bool should_unmount = false;
     if (strcmp(mount.source, source_name) == 0 || (impl.impl == Magisk && strcmp(mount.source, "worker") == 0)) should_unmount = true;
+    if (impl.impl == APatch && (strstr(mount.source, "apatch") != NULL || strstr(mount.source, "APatch") != NULL)) should_unmount = true;
+    if (impl.impl == KernelSU && strstr(mount.source, "KSU") != NULL) should_unmount = true;
     if (strncmp(mount.target, "/data/adb/modules", strlen("/data/adb/modules")) == 0) should_unmount = true;
     if (strncmp(mount.root, "/adb/modules/", strlen("/adb/modules/")) == 0) should_unmount = true;
+    if (strstr(mount.target, "/.tmpdir") != NULL) should_unmount = true;
+    if (impl.impl == APatch && strstr(mount.target, "/data/adb/ap") != NULL) should_unmount = true;
 
     if (!should_unmount) continue;
 

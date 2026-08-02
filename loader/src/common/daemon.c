@@ -19,12 +19,7 @@ static int rezygiskd_connect(uint8_t retry) {
     .sun_family = AF_UNIX,
     .sun_path = { 0 }
   };
-  /*
-    INFO: Application must assume that sun_path can hold _POSIX_PATH_MAX characters.
 
-    Sources:
-     - https://pubs.opengroup.org/onlinepubs/009696699/basedefs/sys/un.h.html
-  */
   strcpy(addr.sun_path, TMP_PATH "/" SOCKET_FILE_NAME);
 
   retry++;
@@ -36,6 +31,10 @@ static int rezygiskd_connect(uint8_t retry) {
       return -1;
     }
 
+    struct timeval tv = { .tv_sec = 2, .tv_usec = 0 };
+    setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+
     int ret = connect(fd, (struct sockaddr *)&addr, sizeof(addr));
     if (ret == -1) {
       PLOGE("connect (retry: %d)", retry);
@@ -44,7 +43,9 @@ static int rezygiskd_connect(uint8_t retry) {
 
       if (!retry) return -1;
 
-      sleep(1);
+      usleep(100000);
+
+      continue;
     }
 
     return fd;

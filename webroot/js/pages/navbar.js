@@ -5,29 +5,37 @@ export function loadNavbar() {
 }
 
 export function setNavbar(page) {
-  /* INFO: Page loader may return false if the page is mini */
   if (allMiniPages.includes(page)) {
-    allPages.forEach((page) => {
-      document.getElementById(`n_${page}`).removeAttribute('checked')
+    allPages.forEach((p) => {
+      const el = document.getElementById(`n_${p}`)
+      if (el) el.checked = false
     })
-    document.getElementById(`n_${page}`).setAttribute('checked', '')
+    const target = document.getElementById(`n_${page}`)
+    if (target) target.checked = true
     return
   }
 
-  allPages.forEach((page) => {
-    document.getElementById(`n_${page}`).removeAttribute('checked')
-    document.getElementById(`nibg_${page}`).classList.remove('show')
-    document.getElementById(`ni_${page}`).style.background = ''
+  allPages.forEach((p) => {
+    const el = document.getElementById(`n_${p}`)
+    if (el) el.checked = false
+    const bg = document.getElementById(`nibg_${p}`)
+    if (bg) bg.classList.remove('show')
+    const icon = document.getElementById(`ni_${p}`)
+    if (icon) icon.style.background = ''
   })
 
-  document.getElementById(`n_${page}`).setAttribute('checked', '')
-  document.getElementById(`nibg_${page}`).classList.add('show')
-  document.getElementById(`ni_${page}`).style.background = `url(./assets/${page}/filled.svg)`
+  const target = document.getElementById(`n_${page}`)
+  if (target) target.checked = true
+  const bg = document.getElementById(`nibg_${page}`)
+  if (bg) bg.classList.add('show')
+  const icon = document.getElementById(`ni_${page}`)
+  if (icon) icon.style.background = `url(./assets/${page}/filled.svg)`
 }
 
 export function whichCurrentPage() {
   for (const page of allPages) {
-    if (document.getElementById(`n_${page}`).hasAttribute('checked')) return page
+    const el = document.getElementById(`n_${page}`)
+    if (el && el.checked) return page
   }
 
   return null

@@ -4,9 +4,12 @@
 
 #include "hook.h"
 #include "ptrace_clear.h"
+#include "anti_detect.h"
 
 __attribute__((visibility("default")))
 void entry(void *addr, size_t size, int tango_flag) {
+  anti_detect_init();
+
   LOGD("ReZygisk%s library injected, version %s", tango_flag ? " [TANGO]" : "", ZKSU_VERSION);
 
   start_addr = addr;

@@ -10,6 +10,14 @@
 
 #include "apatch.h"
 
+#define APATCH_CONFIG_CACHE_SIZE 64
+
+static struct {
+  struct package_config *configs;
+  size_t size;
+  bool loaded;
+} apatch_config_cache = { NULL, 0, false };
+
 void apatch_get_existence(struct root_impl_state *state) {
   if (access("/data/adb/ap/bin/apd", F_OK) != 0) {
     state->state = Inexistent;
@@ -75,6 +83,21 @@ void _apatch_free_package_config(struct packages_config *restrict config) {
 
 /* WARNING: Dynamic memory based */
 bool _apatch_get_package_config(struct packages_config *restrict config) {
+  if (apatch_config_cache.loaded) {
+    config->configs = malloc(apatch_config_cache.size * sizeof(struct package_config));
+    if (!config->configs) return false;
+
+    for (size_t i = 0; i < apatch_config_cache.size; i++) {
+      config->configs[i].process = strdup(apatch_config_cache.configs[i].process);
+      config->configs[i].uid = apatch_config_cache.configs[i].uid;
+      config->configs[i].root_granted = apatch_config_cache.configs[i].root_granted;
+      config->configs[i].umount_needed = apatch_config_cache.configs[i].umount_needed;
+    }
+    config->size = apatch_config_cache.size;
+
+    return true;
+  }
+
   config->configs = NULL;
   config->size = 0;
 
@@ -137,6 +160,18 @@ bool _apatch_get_package_config(struct packages_config *restrict config) {
   }
 
   fclose(fp);
+
+  apatch_config_cache.configs = malloc(config->size * sizeof(struct package_config));
+  if (apatch_config_cache.configs) {
+    for (size_t i = 0; i < config->size; i++) {
+      apatch_config_cache.configs[i].process = strdup(config->configs[i].process);
+      apatch_config_cache.configs[i].uid = config->configs[i].uid;
+      apatch_config_cache.configs[i].root_granted = config->configs[i].root_granted;
+      apatch_config_cache.configs[i].umount_needed = config->configs[i].umount_needed;
+    }
+    apatch_config_cache.size = config->size;
+    apatch_config_cache.loaded = true;
+  }
 
   return true;
 }
@@ -205,14 +240,18 @@ bool apatch_uid_should_umount(uid_t uid, const char *const process) {
 }
 
 bool apatch_uid_is_manager(uid_t uid) {
-  struct stat st;
-  if (stat("/data/user_de/0/me.bmax.apatch", &st) == -1) {
-    if (errno != ENOENT) {
-      LOGE("Failed to stat APatch manager data directory: %s", strerror(errno));
-    }
+  static const char *apatch_manager_paths[] = {
+    "/data/user_de/0/me.bmax.apatch",
+    "/data/user_de/0/io.github.a13e300.tools.apatch",
+    NULL
+  };
 
-    return false;
+  for (size_t i = 0; apatch_manager_paths[i] != NULL; i++) {
+    struct stat st;
+    if (stat(apatch_manager_paths[i], &st) == 0) {
+      return st.st_uid == uid;
+    }
   }
 
-  return st.st_uid == uid;
+  return false;
 }

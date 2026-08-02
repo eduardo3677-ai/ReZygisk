@@ -15,7 +15,7 @@ if [ "$(which magisk)" ]; then
       if [ -f "$file/post-fs-data.sh" ]; then
         cd "$file"
         log -p i -t "zygisk-sh" "Manually trigger post-fs-data.sh for $file"
-        sh "$(realpath ./post-fs-data.sh)"
+        sh "$(realpath ./post-fs-data.sh)" || log -p e -t "zygisk-sh" "post-fs-data.sh failed for $file"
         cd "$MODDIR"
       fi
     fi
@@ -23,21 +23,18 @@ if [ "$(which magisk)" ]; then
 fi
 
 create_sys_perm() {
-  mkdir -p $1
-  chmod 555 $1
-  chcon u:object_r:system_file:s0 $1
+  mkdir -p "$1"
+  chmod 555 "$1"
+  chcon u:object_r:system_file:s0 "$1" 2>/dev/null || true
 }
 
 export TMP_PATH=/data/adb/rezygisk
 rm -rf "$TMP_PATH"
 
-create_sys_perm $TMP_PATH
+create_sys_perm "$TMP_PATH"
 
-sh /data/adb/post-fs-data.d/rezygisk.sh
+sh /data/adb/post-fs-data.d/rezygisk.sh || true
 
-# INFO: Utilize the one with the biggest output, as some devices with Tango have the full list
-#         in ro.product.cpu.abilist but others only have a subset there, and the full list in
-#         ro.system.product.cpu.abilist
 CPU_ABIS_PROP1=$(getprop ro.system.product.cpu.abilist)
 CPU_ABIS_PROP2=$(getprop ro.product.cpu.abilist)
 
@@ -47,12 +44,20 @@ else
   CPU_ABIS=$CPU_ABIS_PROP1
 fi
 
-if [[ "$CPU_ABIS" == *"arm64-v8a"* || "$CPU_ABIS" == *"x86_64"* ]]; then
-  ./bin/zygisk-ptrace64 monitor &
-else
-  # INFO: Device is 32-bit only
+PTRACER=""
+case "$CPU_ABIS" in
+  *arm64-v8a*|*x86_64*)
+    PTRACER="./bin/zygisk-ptrace64"
+    ;;
+  *)
+    PTRACER="./bin/zygisk-ptrace32"
+    ;;
+esac
 
-  ./bin/zygisk-ptrace32 monitor &
+if [ -x "$PTRACER" ]; then
+  "$PTRACER" monitor &
+else
+  log -p e -t "zygisk-sh" "Ptracer binary not found: $PTRACER"
 fi
 
 exit 0

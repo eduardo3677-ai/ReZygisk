@@ -25,6 +25,7 @@
 #include "art_method.h"
 #include "cpp_strings.h"
 #include "registers.h"
+#include "zygisk_compat.h"
 
 void *start_addr = NULL;
 size_t block_size = 0;
@@ -935,6 +936,40 @@ static void rz_fork_post(struct zygisk_context *ctx __attribute__((unused))) {
   g_ctx = NULL;
 }
 
+static JNIEnv *get_jni_env(void) {
+  jint (*get_created_java_vms)(JavaVM **, jsize, jsize *) = (jint (*)(JavaVM **, jsize, jsize *))dlsym(RTLD_DEFAULT, "JNI_GetCreatedJavaVMs");
+  if (!get_created_java_vms) {
+    struct maps_info *maps = parse_maps_safe("self");
+    if (!maps) return NULL;
+
+    for (size_t i = 0; i < maps->length; i++) {
+      struct map_entry *map = &maps->maps[i];
+      if (map->path && !strstr(map->path, "/libnativehelper.so")) continue;
+
+      void *handle = dlopen(map->path, RTLD_LAZY);
+      if (!handle) break;
+
+      get_created_java_vms = (jint (*)(JavaVM **, jsize, jsize *))dlsym(handle, "JNI_GetCreatedJavaVMs");
+      dlclose(handle);
+
+      break;
+    }
+
+    free_maps(maps);
+
+    if (!get_created_java_vms) return NULL;
+  }
+
+  JavaVM *vm = NULL;
+  jsize num = 0;
+  if (get_created_java_vms(&vm, 1, &num) != JNI_OK || !vm) return NULL;
+
+  JNIEnv *env = NULL;
+  if ((*vm)->GetEnv(vm, (void **)&env, JNI_VERSION_1_6) != JNI_OK || !env) return NULL;
+
+  return env;
+}
+
 static bool load_modules_only(void) {
   struct zygisk_modules ms;
   if (!rezygiskd_read_modules(&ms)) {
@@ -952,17 +987,25 @@ static bool load_modules_only(void) {
     return false;
   }
 
+  zygisk_compat_set_callbacks(
+    hook_jni_methods,
+    api_plt_hook_register,
+    api_plt_hook_exclude,
+    api_plt_hook_commit,
+    api_connect_companion,
+    (void (*)(void *, int))api_set_option,
+    api_get_module_dir,
+    api_get_flags
+  );
+
+  JNIEnv *env = get_jni_env();
+
   for (size_t i = 0; i < ms.modules_count; i++) {
     const char *lib_path = ms.modules[i];
 
     if (!csoloader_load(&zygisk_modules[zygisk_module_length].lib, lib_path)) {
       LOGE("Failed to load module [%s]", lib_path);
 
-      /* INFO: In case a module failed to load, update the list of available modules
-           in ReZygiskd to avoid a mismatch between the loaded modules in ReZygisk
-           Zygote library and the available modules in ReZygiskd. */
-      /* TODO: Update the list of modules for ReZygisk monitor, so that it can update
-                 for WebUI. That is simply cosmetic, though. */
       rezygiskd_remove_module(i);
 
       continue;
@@ -979,9 +1022,25 @@ static bool load_modules_only(void) {
       continue;
     }
 
-    zygisk_modules[zygisk_module_length].api.register_module = rezygisk_module_register;
-    zygisk_modules[zygisk_module_length].api.impl = ENCODE_ID((void *)zygisk_module_length);
-    zygisk_modules[zygisk_module_length].zygisk_module_entry = (void (*)(void *, void *))entry;
+    size_t compat_before = zygisk_compat_get_count();
+
+    if (env) {
+      zygisk_compat_call_entry(entry, env);
+    }
+
+    if (zygisk_compat_get_count() > compat_before) {
+      LOGD("Module [%s] uses Magisk Zygisk ABI (compat mode)", lib_path);
+
+      zygisk_modules[zygisk_module_length].zygisk_module_entry = NULL;
+      zygisk_modules[zygisk_module_length].is_compat = true;
+    } else {
+      LOGD("Module [%s] uses ReZygisk native ABI", lib_path);
+
+      zygisk_modules[zygisk_module_length].api.register_module = rezygisk_module_register;
+      zygisk_modules[zygisk_module_length].api.impl = ENCODE_ID((void *)zygisk_module_length);
+      zygisk_modules[zygisk_module_length].zygisk_module_entry = (void (*)(void *, void *))entry;
+      zygisk_modules[zygisk_module_length].is_compat = false;
+    }
 
     LOGD("Loaded module [%s]. Entry: %p", lib_path, entry);
 
@@ -996,19 +1055,56 @@ static bool load_modules_only(void) {
 
 static void rz_run_modules_pre(struct zygisk_context *ctx) {
   for (size_t i = 0; i < zygisk_module_length; i++) {
+    if (zygisk_modules[i].is_compat) continue;
+
     rz_module_call_on_load(&zygisk_modules[i], ctx->env);
 
     if (FLAG_GET(ctx, APP_SPECIALIZE)) rz_module_call_pre_app_specialize(&zygisk_modules[i], ctx->args.app);
     else if (FLAG_GET(ctx, SERVER_FORK_AND_SPECIALIZE)) rz_module_call_pre_server_specialize(&zygisk_modules[i], ctx->args.server);
+  }
+
+  if (zygisk_compat_get_count() > 0) {
+    if (FLAG_GET(ctx, APP_SPECIALIZE)) {
+      struct zygisk_compat_app_specialize_args cargs = {
+        .uid = ctx->args.app->uid,
+        .gid = ctx->args.app->gid,
+        .gids = ctx->args.app->gids,
+        .runtime_flags = ctx->args.app->runtime_flags,
+        .mount_external = ctx->args.app->mount_external,
+        .se_info = ctx->args.app->se_info,
+        .nice_name = ctx->args.app->nice_name,
+        .instruction_set = ctx->args.app->instruction_set,
+        .app_data_dir = ctx->args.app->app_data_dir,
+        .is_child_zygote = ctx->args.app->is_child_zygote,
+        .is_top_app = ctx->args.app->is_top_app,
+        .pkg_data_info_list = ctx->args.app->pkg_data_info_list,
+        .whitelisted_data_info_list = ctx->args.app->whitelisted_data_info_list,
+        .mount_data_dirs = ctx->args.app->mount_data_dirs,
+        .mount_storage_dirs = ctx->args.app->mount_storage_dirs,
+      };
+      zygisk_compat_call_pre_app(&cargs);
+    } else if (FLAG_GET(ctx, SERVER_FORK_AND_SPECIALIZE)) {
+      zygisk_compat_call_pre_server(ctx->args.server);
+    }
   }
 }
 
 static void rz_run_modules_post(struct zygisk_context *ctx) {
   FLAG_SET(ctx, POST_SPECIALIZE);
 
+  if (zygisk_compat_get_count() > 0) {
+    if (FLAG_GET(ctx, APP_SPECIALIZE)) {
+      zygisk_compat_call_post_app(ctx->args.app);
+    } else if (FLAG_GET(ctx, SERVER_FORK_AND_SPECIALIZE)) {
+      zygisk_compat_call_post_server(ctx->args.server);
+    }
+  }
+
   size_t modules_unloaded = 0;
   for (size_t i = 0; i < zygisk_module_length; i++) {
     struct rezygisk_module *m = &zygisk_modules[i];
+
+    if (m->is_compat) continue;
 
     if (FLAG_GET(ctx, APP_SPECIALIZE)) rz_module_call_post_app_specialize(m, ctx->args.app);
     else if (FLAG_GET(ctx, SERVER_FORK_AND_SPECIALIZE)) rz_module_call_post_server_specialize(m, ctx->args.server);
@@ -1277,6 +1373,8 @@ static void rz_cleanup(struct zygisk_context *ctx) {
   for (size_t i = 0; i < zygisk_module_length; i++) {
     memset(&zygisk_modules[i], 0, sizeof(zygisk_modules[i]));
   }
+
+  zygisk_compat_reset();
 
   enable_unloader = true;
   pthread_mutex_destroy(&ctx->hook_info_lock);

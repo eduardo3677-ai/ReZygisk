@@ -9,7 +9,7 @@
 
 #include "logging.h"
 
-#define REZYGISK_API_VERSION 5
+#define REZYGISK_API_VERSION 6
 
 enum rezygiskd_flags : uint32_t {
   PROCESS_GRANTED_ROOT = (1u << 0),
@@ -156,20 +156,9 @@ struct rezygisk_module {
   void (*zygisk_module_entry)(void *, void *);
 
   bool unload;
+  bool is_compat;
 };
 
-/*
-    INFO: What follows are function definitions to be included wherever necessary.
-            As a reminder for best C practices, a function body should not be in a header
-            since they lead to ODR violations, resulting in UB since the compiled code *can* have duplicate defintions.
-            Therefore, we have only ONE of two choices:
-              1. Put the function declarations here and their respective definitions in a separate .c file;
-              2. Inline these function definitions in the header so as to allow multiple definitions.
-          Doing otherwise, clang-tidy throws 'definitions-in-headers' warning.
-
-    SOURCES:
-     - https://clang.llvm.org/extra/clang-tidy/checks/misc/definitions-in-headers.html
-*/
 static inline void rz_module_call_on_load(struct rezygisk_module *m, void *env) {
   m->zygisk_module_entry((void *)&m->api, env);
 }
@@ -217,7 +206,8 @@ static inline void rz_module_call_pre_app_specialize(struct rezygisk_module *m, 
 
       break;
     }
-    case 5: {
+    case 5:
+    case 6: {
       m->abi.pre_app_specialize(m->abi.impl, args);
 
       break;
@@ -268,7 +258,8 @@ static inline void rz_module_call_post_app_specialize(struct rezygisk_module *m,
 
       break;
     }
-    case 5: {
+    case 5:
+    case 6: {
       m->abi.post_app_specialize(m->abi.impl, args);
 
       break;

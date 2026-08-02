@@ -1,5 +1,6 @@
-Object.prototype.iterate = function(callback) {
-  for (let i = 0; i < this.length; i++) {
-    callback(this[i], i)
+export function iterate(obj, callback) {
+  if (!obj || !obj.length) return
+  for (let i = 0; i < obj.length; i++) {
+    callback(obj[i], i)
   }
 }

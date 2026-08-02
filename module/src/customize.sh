@@ -28,14 +28,20 @@ if [ "$BOOTMODE" ] && [ "$KSU" ]; then
     ui_print "! Please uninstall Magisk before installing ReZygisk"
     abort    "*********************************************************"
   fi
-  elif [ "$BOOTMODE" ] && [ "$APATCH" ]; then
-    ui_print "- Installing from APatch app"
-    if ! [ "$APATCH_VER_CODE" ] || [ "$APATCH_VER_CODE" -lt "$MIN_APATCH_VERSION" ]; then
-      ui_print "*********************************************************"
-      ui_print "! APatch version is too old!"
-      ui_print "! Please update APatch to latest version"
-      abort    "*********************************************************"
-    fi
+elif [ "$BOOTMODE" ] && [ "$APATCH" ]; then
+  ui_print "- Installing from APatch app"
+  if ! [ "$APATCH_VER_CODE" ] || [ "$APATCH_VER_CODE" -lt "$MIN_APATCH_VERSION" ]; then
+    ui_print "*********************************************************"
+    ui_print "! APatch version is too old!"
+    ui_print "! Please update APatch to latest version"
+    abort    "*********************************************************"
+  fi
+  if [ "$(which magisk)" ]; then
+    ui_print "*********************************************************"
+    ui_print "! Multiple root implementation is NOT supported!"
+    ui_print "! Please uninstall Magisk before installing ReZygisk"
+    abort    "*********************************************************"
+  fi
 elif [ "$BOOTMODE" ] && [ "$MAGISK_VER_CODE" ]; then
   ui_print "- Installing from Magisk app"
   if [ "$MAGISK_VER_CODE" -lt "$MIN_MAGISK_VERSION" ]; then
@@ -47,7 +53,7 @@ elif [ "$BOOTMODE" ] && [ "$MAGISK_VER_CODE" ]; then
 else
   ui_print "*********************************************************"
   ui_print "! Install from recovery is not supported"
-  ui_print "! Please install from KernelSU or Magisk app"
+  ui_print "! Please install from KernelSU, APatch or Magisk app"
   abort    "*********************************************************"
 fi
 
@@ -138,14 +144,22 @@ fi
 SUPPORTS_32BIT=false
 SUPPORTS_64BIT=false
 
-if [[ "$CPU_ABIS" == *"x86"* && "$CPU_ABIS" != "x86_64" || "$CPU_ABIS" == *"armeabi"* ]]; then
-  SUPPORTS_32BIT=true
-  ui_print "- Device supports 32-bit"
-fi
+case "$CPU_ABIS" in
+  *armeabi*|*x86*)
+    SUPPORTS_32BIT=true
+    ui_print "- Device supports 32-bit"
+    ;;
+esac
 
-if [[ "$CPU_ABIS" == *"x86_64"* || "$CPU_ABIS" == *"arm64-v8a"* ]]; then
-  SUPPORTS_64BIT=true
-  ui_print "- Device supports 64-bit"
+case "$CPU_ABIS" in
+  *arm64-v8a*|*x86_64*)
+    SUPPORTS_64BIT=true
+    ui_print "- Device supports 64-bit"
+    ;;
+esac
+
+if [ "$SUPPORTS_32BIT" = false ] && [ "$SUPPORTS_64BIT" = false ]; then
+  abort "! No supported ABI found"
 fi
 
 if [ "$SUPPORTS_32BIT" = true ]; then

@@ -53,21 +53,33 @@ export async function load() {
   const monitor_status = document.getElementById('monitor_status')
   const strings = await getStrings(whichCurrentPage())
 
-  monitor_start.addEventListener('click', () => {
+  monitor_start.addEventListener('click', async () => {
     if (![ strings.monitor.status.tracing, strings.monitor.status.stopping, strings.monitor.status.stopped ].includes(monitor_status.innerHTML)) return;
     monitor_status.innerHTML = strings.monitor.status.tracing
-    exec('/data/adb/modules/rezygisk/bin/zygisk-ptrace64 ctl start')
+    const res = await exec('/data/adb/modules/rezygisk/bin/zygisk-ptrace64 ctl start')
+    if (res.errno !== 0) {
+      toast('Failed to start monitor')
+      _updateDynamicElement()
+    }
   })
 
-  monitor_stop.addEventListener('click', () => {
+  monitor_stop.addEventListener('click', async () => {
     monitor_status.innerHTML = strings.monitor.status.exiting
-    exec('/data/adb/modules/rezygisk/bin/zygisk-ptrace64 ctl exit')
+    const res = await exec('/data/adb/modules/rezygisk/bin/zygisk-ptrace64 ctl exit')
+    if (res.errno !== 0) {
+      toast('Failed to stop monitor')
+      _updateDynamicElement()
+    }
   })
 
-  monitor_pause.addEventListener('click', () => {
+  monitor_pause.addEventListener('click', async () => {
     if (![ strings.monitor.status.tracing, strings.monitor.status.stopping, strings.monitor.status.stopped ].includes(monitor_status.innerHTML)) return;
     monitor_status.innerHTML = strings.monitor.status.stopped
-    exec('/data/adb/modules/rezygisk/bin/zygisk-ptrace64 ctl stop')
+    const res = await exec('/data/adb/modules/rezygisk/bin/zygisk-ptrace64 ctl stop')
+    if (res.errno !== 0) {
+      toast('Failed to pause monitor')
+      _updateDynamicElement()
+    }
   })
 
   return;

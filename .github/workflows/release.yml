@@ -1,8 +1,9 @@
-name: Trusted CI
+name: Release CI
 
 on:
   push:
-    branches: [ main ]
+    tags:
+      - 'v*'
 
 permissions:
   contents: write
@@ -54,16 +55,14 @@ jobs:
           name: ReZygisk-debug
           path: "build/out/ReZygisk-v*-debug.zip"
 
-      - name: Create release
-        if: github.ref == 'refs/heads/main'
+      - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          VERSION=$(grep '^version=' build/out/ReZygisk-v*-release.zip 2>/dev/null || echo "")
-          TAG="v$(date +%Y%m%d)-${{ github.run_number }}"
+          TAG=${GITHUB_REF#refs/tags/}
           gh release create "$TAG" \
             build/out/ReZygisk-v*-release.zip \
             build/out/ReZygisk-v*-debug.zip \
             --title "ReZygisk $TAG" \
-            --notes "Automated build from ${{ github.sha }}" \
-            --latest || true
+            --generate-notes \
+            --latest

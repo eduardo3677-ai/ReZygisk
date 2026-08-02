@@ -7,8 +7,7 @@ DEBUG=@DEBUG@
 MODDIR=${0%/*}
 
 if [ "$ZYGISK_ENABLED" ]; then
-  sed -i "s|^description=|description=[❌ Disable Magisk's built-in Zygisk] |" "$MODDIR/module.prop"
-
+  sed -i "s/^description=/description=[Disable Magisk's built-in Zygisk] /" "$MODDIR/module.prop"
   exit 0
 fi
 
@@ -20,7 +19,7 @@ if [ "$(which magisk)" ]; then
       if [ -f "$file/service.sh" ]; then
         cd "$file"
         log -p i -t "zygisk-sh" "Manually trigger service.sh for $file"
-        sh "$(realpath ./service.sh)" &
+        sh "$(realpath ./service.sh)" & 2>/dev/null || log -p e -t "zygisk-sh" "service.sh failed for $file"
         cd "$MODDIR"
       fi
     fi

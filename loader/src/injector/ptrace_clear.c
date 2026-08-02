@@ -36,8 +36,15 @@ static bool seccomp_filters_visible() {
   return false;
 }
 
+static void hide_ptrace_via_prctl(void) {
+  if (prctl(PR_SET_PTRACER, 0) == -1) {
+    PLOGE("prctl(PR_SET_PTRACER)");
+  }
+}
+
 void perform_ptrace_message_clear() {
-  /* INFO: Since kernel 5.10, Seccomp filters are visible, making hiding via seccomp event unusable */
+  hide_ptrace_via_prctl();
+
   if (seccomp_filters_visible()) {
     LOGD("Seccomp filters are visible, skipping using hiding via seccomp event");
 
@@ -65,30 +72,23 @@ void perform_ptrace_message_clear() {
   args[0] |= 0x10000;
 
   struct sock_filter filter[] = {
-    /* INFO: Check syscall number */
     BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, nr)),
     BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_exit_group, 0, 9),
 
-    /* INFO: Load and check arg0 (lower 32 bits) */
     BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, args[0])),
     BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, args[0], 0, 7),
 
-    /* INFO: Load and check arg1 (lower 32 bits) */
     BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, args[1])),
     BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, args[1], 0, 5),
 
-    /* INFO: Load and check arg2 (lower 32 bits) */
     BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, args[2])),
     BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, args[2], 0, 3),
 
-    /* INFO: Load and check arg3 (lower 32 bits) */
     BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, args[3])),
     BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, args[3], 0, 1),
 
-    /* INFO: All match: return TRACE => will trigger PTRACE_EVENT_SECCOMP */
     BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_TRACE),
 
-    /* INFO: Default: allow */
     BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
   };
 
@@ -103,6 +103,5 @@ void perform_ptrace_message_clear() {
     return;
   }
 
-  /* INFO: This will trigger a ptrace event, syscall will not execute due to tracee_skip_syscall */
   syscall(__NR_exit_group, args[0], args[1], args[2], args[3]);
 }
