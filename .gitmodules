@@ -1,6 +1,6 @@
 [submodule "PLTI"]
 	path = loader/src/external/plti
-	url = https://github.com/PerformanC/PLTI
+	url = https://github.com/eduardo3677-ai/PLTI
 [submodule "CSOLoader"]
 	path = loader/src/external/csoloader
-	url = https://github.com/ThePedroo/CSOLoader
+	url = https://github.com/eduardo3677-ai/CSOLoader
