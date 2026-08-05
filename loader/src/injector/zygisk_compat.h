@@ -6,7 +6,7 @@
 #include <stdint.h>
 #include <stddef.h>
 
-#define ZYGISK_COMPAT_API_VERSION 2
+#define ZYGISK_COMPAT_API_VERSION 5
 
 #define ZYGISK_OPTION_FORCE_DENYLIST_UNMOUNT 0
 #define ZYGISK_OPTION_DLCLOSE_MODULE_LIBRARY 1
