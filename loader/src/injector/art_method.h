@@ -43,6 +43,7 @@ static inline bool amethod_init(JNIEnv *env) {
   if (!throwable) {
     LOGE("Failed to found Throwable");
 
+    if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
     if (clazz) (*env)->DeleteLocalRef(env, clazz);
 
     return false;
@@ -52,6 +53,7 @@ static inline bool amethod_init(JNIEnv *env) {
   if (!clz) {
     LOGE("Failed to found Class");
 
+    if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
     if (clazz) (*env)->DeleteLocalRef(env, clazz);
     (*env)->DeleteLocalRef(env, throwable);
 
@@ -59,14 +61,17 @@ static inline bool amethod_init(JNIEnv *env) {
   }
 
   jmethodID get_declared_constructors = (*env)->GetMethodID(env, clz, "getDeclaredConstructors", "()[Ljava/lang/reflect/Constructor;");
+  if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
   (*env)->DeleteLocalRef(env, clz);
 
   jobjectArray constructors = (jobjectArray)(*env)->CallObjectMethod(env, throwable, get_declared_constructors);
+  if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
   (*env)->DeleteLocalRef(env, throwable);
   if (!constructors || (*env)->GetArrayLength(env, constructors) < 2) {
     LOGE("Throwable has less than 2 constructors");
 
     if (clazz) (*env)->DeleteLocalRef(env, clazz);
+    if (constructors) (*env)->DeleteLocalRef(env, constructors);
 
     return false;
   }

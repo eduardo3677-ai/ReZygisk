@@ -436,13 +436,15 @@ void hook_jni_methods(JNIEnv *env, const char *clz, JNINativeMethod *methods, in
   }
 
   if (hooks_count == 0) {
-    (*env)->DeleteLocalRef(env, clazz);
+    if (clazz) (*env)->DeleteLocalRef(env, clazz);
+    if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
 
     return;
   }
 
   (*env)->RegisterNatives(env, clazz, hooks, (jint)hooks_count);
-  (*env)->DeleteLocalRef(env, clazz);
+  if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+  if (clazz) (*env)->DeleteLocalRef(env, clazz);
 }
 
 /* INFO: JNI method hook definitions */
@@ -496,15 +498,17 @@ static void initialize_jni_hook(void) {
 
   jclass classMember = (*env)->FindClass(env, "java/lang/reflect/Member");
   if (classMember) member_getModifiers = (*env)->GetMethodID(env, classMember, "getModifiers", "()I");
+  if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
 
   jclass classModifier = (*env)->FindClass(env, "java/lang/reflect/Modifier");
   if (classModifier) {
     jfieldID fieldId = (*env)->GetStaticFieldID(env, classModifier, "NATIVE", "I");
     if (fieldId) MODIFIER_NATIVE = (*env)->GetStaticIntField(env, classModifier, fieldId);
   }
+  if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
 
-  (*env)->DeleteLocalRef(env, classMember);
-  (*env)->DeleteLocalRef(env, classModifier);
+  if (classMember) (*env)->DeleteLocalRef(env, classMember);
+  if (classModifier) (*env)->DeleteLocalRef(env, classModifier);
 
   if (!member_getModifiers || MODIFIER_NATIVE == 0) return;
 
@@ -1357,6 +1361,7 @@ static void rz_cleanup(struct zygisk_context *ctx) {
 
       (*ctx->env)->DeleteLocalRef(ctx->env, jc);
     }
+    if ((*ctx->env)->ExceptionCheck(ctx->env)) (*ctx->env)->ExceptionClear(ctx->env);
 
     free(entry->class_name);
     free(entry->methods);
