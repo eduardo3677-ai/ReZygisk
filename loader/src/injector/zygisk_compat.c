@@ -11,12 +11,13 @@
 struct zygisk_compat_module_entry_info {
   struct zygisk_compat_module_abi abi;
   void *encoded_id;
+  struct zygisk_compat_api_table api_table;
 };
 
 static struct zygisk_compat_module_entry_info compat_modules[MAX_COMPAT_MODULES];
 static size_t compat_module_count = 0;
 
-static struct zygisk_compat_api_table compat_api_table;
+static struct zygisk_compat_api_table compat_api_template;
 
 static void *cb_hook_jni = NULL;
 static void *cb_plt_register = NULL;
@@ -45,6 +46,7 @@ size_t zygisk_compat_get_count(void) {
 }
 
 void zygisk_compat_reset(void) {
+  memset(compat_modules, 0, sizeof(compat_modules));
   compat_module_count = 0;
   current_compat_encoded_id = NULL;
 }
@@ -62,9 +64,15 @@ static bool compat_register_module(struct zygisk_compat_api_table *table, struct
     return false;
   }
 
-  compat_modules[compat_module_count].abi = *abi;
-  compat_modules[compat_module_count].encoded_id = current_compat_encoded_id;
-  table->impl = current_compat_encoded_id ? current_compat_encoded_id : (void *)(uintptr_t)(compat_module_count + 1);
+  struct zygisk_compat_module_entry_info *module = &compat_modules[compat_module_count];
+  if (table != &module->api_table) {
+    LOGE("Zygisk compat module registered with an unexpected API table");
+    return false;
+  }
+
+  module->abi = *abi;
+  module->encoded_id = current_compat_encoded_id;
+  table->impl = current_compat_encoded_id;
 
   if (abi->api_version >= 4) {
     table->pltHookRegister_v4 = compat_plt_register_v4;
@@ -168,21 +176,34 @@ void zygisk_compat_set_callbacks(
   cb_plt_register_v4 = (void *)plt_register_v4;
   cb_exempt_fd = (void *)exempt_fd;
 
-  compat_api_table.impl = NULL;
-  compat_api_table.registerModule = compat_register_module;
-  compat_api_table.hookJniNativeMethods = compat_hook_jni;
-  compat_api_table.pltHookRegister_v4 = compat_plt_register_v4;
-  compat_api_table.exemptFd = compat_exempt_fd;
-  compat_api_table.pltHookCommit = compat_plt_commit;
-  compat_api_table.connectCompanion = compat_connect_companion;
-  compat_api_table.setOption = compat_set_option;
-  compat_api_table.getModuleDir = compat_get_module_dir;
-  compat_api_table.getFlags = compat_get_flags;
+  compat_api_template.impl = NULL;
+  compat_api_template.registerModule = compat_register_module;
+  compat_api_template.hookJniNativeMethods = compat_hook_jni;
+  compat_api_template.pltHookRegister_v4 = compat_plt_register_v4;
+  compat_api_template.exemptFd = compat_exempt_fd;
+  compat_api_template.pltHookCommit = compat_plt_commit;
+  compat_api_template.connectCompanion = compat_connect_companion;
+  compat_api_template.setOption = compat_set_option;
+  compat_api_template.getModuleDir = compat_get_module_dir;
+  compat_api_template.getFlags = compat_get_flags;
 }
 
 size_t zygisk_compat_call_entry(void *entry, JNIEnv *env) {
+  if (compat_module_count >= MAX_COMPAT_MODULES) {
+    LOGE("Too many Zygisk compat modules");
+    return 0;
+  }
+
   size_t before = compat_module_count;
-  ((zygisk_compat_entry_fn)entry)(&compat_api_table, env);
+  struct zygisk_compat_module_entry_info *module = &compat_modules[before];
+
+  // Modules keep the table pointer passed to their entry point. It must remain bound to this
+  // module so API calls made from later specialization callbacks retain the correct identity.
+  memset(module, 0, sizeof(*module));
+  module->api_table = compat_api_template;
+  module->api_table.impl = current_compat_encoded_id;
+
+  ((zygisk_compat_entry_fn)entry)(&module->api_table, env);
   if (env && (*env)->ExceptionCheck(env)) {
     LOGE("Zygisk compat module entry raised a Java exception");
     (*env)->ExceptionDescribe(env);
