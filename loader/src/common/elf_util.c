@@ -157,7 +157,7 @@ ElfImg *ElfImg_create(const char *elf, void *base) {
     */
     img->base = base;
 
-    LOGD("Using provided base address 0x%p for %s", base, elf);
+    LOGD("Using provided base address %p for %s", base, elf);
   } else {
     if (!_find_module_base(img)) {
       LOGE("Failed to find module base for %s using dl_iterate_phdr", elf);

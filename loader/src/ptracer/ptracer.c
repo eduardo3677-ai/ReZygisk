@@ -160,7 +160,7 @@ bool trace_zygote(int pid, bool tango_flag) {
 
   struct kernel_version version = parse_kversion();
   if (version.major > 3 || (version.major == 3 && version.minor >= 8)) {
-    if (ptrace(PTRACE_SEIZE, pid, 0, PTRACE_O_EXITKILL | PTRACE_O_TRACESECCOMP) == -1) {
+    if (ptrace(PTRACE_SEIZE, pid, 0, PTRACE_O_EXITKILL | PTRACE_O_TRACESECCOMP | PTRACE_O_TRACESYSGOOD) == -1) {
       PLOGE("seize for tango");
 
       return false;
@@ -168,7 +168,7 @@ bool trace_zygote(int pid, bool tango_flag) {
 
     WAIT_OR_DIE;
   } else {
-    if (ptrace(PTRACE_SEIZE, pid, 0, 0) == -1) {
+    if (ptrace(PTRACE_SEIZE, pid, 0, PTRACE_O_TRACESYSGOOD) == -1) {
       PLOGE("seize");
 
       return false;
@@ -177,11 +177,26 @@ bool trace_zygote(int pid, bool tango_flag) {
     WAIT_OR_DIE;
   }
 
-  kill(pid, SIGCONT);
-  ptrace(PTRACE_SYSCALL, pid, 0, 0);
+  if (kill(pid, SIGCONT) == -1) {
+    PLOGE("kill SIGCONT");
+    ptrace(PTRACE_DETACH, pid, 0, 0);
+
+    return false;
+  }
+
+  if (ptrace(PTRACE_SYSCALL, pid, 0, 0) == -1) {
+    PLOGE("initial PTRACE_SYSCALL");
+    ptrace(PTRACE_DETACH, pid, 0, SIGCONT);
+
+    return false;
+  }
 
   int dummy;
-  wait_for_ptrace_syscall_stop(pid, &dummy);
+  if (!wait_for_ptrace_syscall_stop(pid, &dummy)) {
+    ptrace(PTRACE_DETACH, pid, 0, SIGCONT);
+
+    return false;
+  }
 
   uintptr_t libc_init_got_slot = 0, libc_init_resolved = 0;
   if (!wait_linker_ready(pid, &libc_init_resolved, &libc_init_got_slot)) {

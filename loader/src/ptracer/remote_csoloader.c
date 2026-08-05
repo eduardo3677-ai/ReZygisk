@@ -47,6 +47,12 @@ static long remote_mmap_offset_arg(off_t file_offset, size_t page_size) {
   #endif
 }
 
+static bool remote_mmap_succeeded(long result) {
+  /* A 32-bit mapping above 2 GiB is negative as a long. Linux syscall errors
+     are restricted to the inclusive range [-4095, -1]. */
+  return result != 0 && !(result < 0 && result >= -4095);
+}
+
 /* INFO: Parse ELF headers and compute the total mapping size for PT_LOAD segments. */
 static bool compute_load_layout(int fd, size_t page_size, ElfW(Ehdr) *eh,
                                 ElfW(Phdr) **out_phdr, ElfW(Addr) *out_min_vaddr,
@@ -498,6 +504,13 @@ static bool resolve_symbol_addr(int fd, const struct elf_dyn_info *info,
     }
   }
 
+  if (ELF_ST_BIND(sym.st_info) == STB_WEAK) {
+    LOGD("Weak external symbol %s is unresolved; using zero", name);
+    *out_addr = 0;
+
+    return true;
+  }
+
   LOGE("Failed to resolve external symbol %s", name);
 
   return false;
@@ -535,7 +548,7 @@ static bool apply_rela_section(int pid, int fd, const struct elf_dyn_info *info,
         if (!resolve_symbol_addr(fd, info, local_map, remote_map, needed_paths, load_bias, sym, &sym_addr))
           return false;
 
-        value = sym_addr ? (ElfW(Addr))sym_addr + (ElfW(Addr))r.r_addend : 0;
+        value = (ElfW(Addr))sym_addr + (ElfW(Addr))r.r_addend;
       } else {
         LOGE("Unsupported AArch64 RELA type %u", type);
 
@@ -549,7 +562,7 @@ static bool apply_rela_section(int pid, int fd, const struct elf_dyn_info *info,
         if (!resolve_symbol_addr(fd, info, local_map, remote_map, needed_paths, load_bias, sym, &sym_addr))
           return false;
 
-        value = sym_addr ? (ElfW(Addr))sym_addr + (ElfW(Addr))r.r_addend : 0;
+        value = (ElfW(Addr))sym_addr + (ElfW(Addr))r.r_addend;
       } else {
         LOGE("Unsupported x86_64 RELA type %u", type);
         return false;
@@ -598,8 +611,7 @@ static bool apply_rel_section(int pid, int fd, const struct elf_dyn_info *info,
         if (!resolve_symbol_addr(fd, info, local_map, remote_map, needed_paths, load_bias, sym, &sym_addr))
           return false;
 
-        if (sym_addr == 0) value = 0;
-        else if (type == R_ARM_ABS32) {
+        if (type == R_ARM_ABS32) {
           if (!read_remote_addr(pid, target, &addend)) return false;
 
           value = (ElfW(Addr))sym_addr + addend;
@@ -621,8 +633,7 @@ static bool apply_rel_section(int pid, int fd, const struct elf_dyn_info *info,
         if (!resolve_symbol_addr(fd, info, local_map, remote_map, needed_paths, load_bias, sym, &sym_addr))
           return false;
 
-        if (sym_addr == 0) value = 0;
-        else if (type == R_386_32) {
+        if (type == R_386_32) {
           if (!read_remote_addr(pid, target, &addend)) return false;
 
           value = (ElfW(Addr))sym_addr + addend;
@@ -801,9 +812,9 @@ bool remote_csoloader_load_and_resolve_entry(int pid, struct user_regs_struct *r
   args[4] = -1;
   args[5] = 0;
 
-  uintptr_t remote_base = (uintptr_t)remote_syscall(pid, regs, syscall_gadget, SYS_mmap, args, 6);
-  if (!remote_base || remote_base == (uintptr_t)MAP_FAILED) {
-    LOGE("remote mmap reserve failed: %p", (void *)remote_base);
+  long remote_base_result = remote_syscall(pid, regs, syscall_gadget, SYS_mmap, args, 6);
+  if (!remote_mmap_succeeded(remote_base_result)) {
+    LOGE("remote mmap reserve failed: %ld", remote_base_result);
 
 
     args[0] = remote_fd;
@@ -814,6 +825,8 @@ bool remote_csoloader_load_and_resolve_entry(int pid, struct user_regs_struct *r
 
     return false;
   }
+
+  uintptr_t remote_base = (uintptr_t)remote_base_result;
 
 #ifdef __LP64__
   if (remote_base < min_addr) {
@@ -875,9 +888,9 @@ bool remote_csoloader_load_and_resolve_entry(int pid, struct user_regs_struct *r
         args[4] = remote_fd;
         args[5] = remote_mmap_offset_arg(file_page_offset, page_size);
 
-        uintptr_t seg_map = (uintptr_t)remote_syscall(pid, regs, syscall_gadget, SYS_mmap, args, 6);
-        if (!seg_map || seg_map == (uintptr_t)MAP_FAILED) {
-          LOGE("remote mmap writable file-backed segment failed for phdr %d", i);
+        long seg_map_result = remote_syscall(pid, regs, syscall_gadget, SYS_mmap, args, 6);
+        if (!remote_mmap_succeeded(seg_map_result)) {
+          LOGE("remote mmap writable file-backed segment failed for phdr %d: %ld", i, seg_map_result);
 
 
           args[0] = remote_fd;
@@ -916,9 +929,9 @@ bool remote_csoloader_load_and_resolve_entry(int pid, struct user_regs_struct *r
         args[4] = -1;
         args[5] = 0;
 
-        uintptr_t bss_map = (uintptr_t)remote_syscall(pid, regs, syscall_gadget, SYS_mmap, args, 6);
-        if (!bss_map || bss_map == (uintptr_t)MAP_FAILED) {
-          LOGE("remote mmap bss segment failed for phdr %d", i);
+        long bss_map_result = remote_syscall(pid, regs, syscall_gadget, SYS_mmap, args, 6);
+        if (!remote_mmap_succeeded(bss_map_result)) {
+          LOGE("remote mmap bss segment failed for phdr %d: %ld", i, bss_map_result);
 
 
           args[0] = remote_fd;
@@ -946,9 +959,9 @@ bool remote_csoloader_load_and_resolve_entry(int pid, struct user_regs_struct *r
         args[4] = remote_fd;
         args[5] = remote_mmap_offset_arg(file_page_offset, page_size);
 
-        uintptr_t seg_map = (uintptr_t)remote_syscall(pid, regs, syscall_gadget, SYS_mmap, args, 6);
-        if (!seg_map || seg_map == (uintptr_t)MAP_FAILED) {
-          LOGE("remote mmap file-backed segment failed for phdr %d", i);
+        long seg_map_result = remote_syscall(pid, regs, syscall_gadget, SYS_mmap, args, 6);
+        if (!remote_mmap_succeeded(seg_map_result)) {
+          LOGE("remote mmap file-backed segment failed for phdr %d: %ld", i, seg_map_result);
 
 
           args[0] = remote_fd;
@@ -970,9 +983,9 @@ bool remote_csoloader_load_and_resolve_entry(int pid, struct user_regs_struct *r
         args[4] = -1;
         args[5] = 0;
 
-        uintptr_t bss_map = (uintptr_t)remote_syscall(pid, regs, syscall_gadget, SYS_mmap, args, 6);
-        if (!bss_map || bss_map == (uintptr_t)MAP_FAILED) {
-          LOGE("remote mmap bss segment failed for phdr %d", i);
+        long bss_map_result = remote_syscall(pid, regs, syscall_gadget, SYS_mmap, args, 6);
+        if (!remote_mmap_succeeded(bss_map_result)) {
+          LOGE("remote mmap bss segment failed for phdr %d: %ld", i, bss_map_result);
 
 
           args[0] = remote_fd;

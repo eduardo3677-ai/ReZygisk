@@ -134,6 +134,7 @@ static size_t jni_hook_list_count = 0;
 
 struct rezygisk_module *zygisk_modules = NULL;
 size_t zygisk_module_length = 0;
+static bool modules_loaded = false;
 
 static bool should_unmap_zygisk = false;
 static bool enable_unloader = false;
@@ -749,8 +750,6 @@ static bool module_id_from_impl(void *id, size_t *index) {
 }
 
 static int api_connect_companion(void *id) {
-  if (!g_ctx) return -1;
-
   size_t module_index = 0;
   if (!module_id_from_impl(id, &module_index)) {
     LOGE("Invalid (encoded) module id %zu", (size_t)id);
@@ -762,8 +761,6 @@ static int api_connect_companion(void *id) {
 }
 
 static void api_set_option(void *id, enum rezygisk_options opt) {
-  if (!g_ctx) return;
-
   size_t module_index = 0;
   if (!module_id_from_impl(id, &module_index)) {
     LOGE("Invalid (encoded) module id %zu", (size_t)id);
@@ -773,7 +770,7 @@ static void api_set_option(void *id, enum rezygisk_options opt) {
 
   switch (opt) {
     case FORCE_DENYLIST_UNMOUNT: {
-      FLAG_SET(g_ctx, DO_REVERT_UNMOUNT);
+      if (g_ctx) FLAG_SET(g_ctx, DO_REVERT_UNMOUNT);
 
       break;
     }
@@ -787,8 +784,6 @@ static void api_set_option(void *id, enum rezygisk_options opt) {
 }
 
 static int api_get_module_dir(void *id) {
-  if (!g_ctx) return -1;
-
   size_t module_index = 0;
   if (!module_id_from_impl(id, &module_index)) {
     LOGE("Invalid (encoded) module id %zu", (size_t)id);
@@ -852,7 +847,7 @@ static int sigmask(int how, int signum) {
   return sigprocmask(how, &set, NULL);
 }
 
-static bool load_modules_only(void);
+static bool load_modules_only(JNIEnv *env);
 
 static void rz_fork_pre(struct zygisk_context *ctx) {
   /* INFO: Do our own fork before loading any 3rd party code.
@@ -1004,7 +999,14 @@ static JNIEnv *get_jni_env(void) {
   return env;
 }
 
-static bool load_modules_only(void) {
+static bool load_modules_only(JNIEnv *env) {
+  if (modules_loaded) return true;
+  if (!env) {
+    LOGE("Cannot load Zygisk modules without JNIEnv");
+
+    return false;
+  }
+
   struct zygisk_modules ms;
   if (!rezygiskd_read_modules(&ms)) {
     LOGE("Failed to read modules from ReZygiskd");
@@ -1014,6 +1016,7 @@ static bool load_modules_only(void) {
 
   if (ms.modules_count == 0) {
     free_modules(&ms);
+    modules_loaded = true;
 
     return true;
   }
@@ -1040,7 +1043,6 @@ static bool load_modules_only(void) {
     api_exempt_fd
   );
 
-  JNIEnv *env = get_jni_env();
   size_t removed_modules = 0;
 
   for (size_t i = 0; i < ms.modules_count; i++) {
@@ -1096,11 +1098,18 @@ static bool load_modules_only(void) {
   }
 
   free_modules(&ms);
+  modules_loaded = true;
 
   return true;
 }
 
 static void rz_run_modules_pre(struct zygisk_context *ctx) {
+  if (!modules_loaded && !load_modules_only(ctx->env)) {
+    LOGE("Failed to load modules for specialization");
+
+    return;
+  }
+
   for (size_t i = 0; i < zygisk_module_length; i++) {
     if (zygisk_modules[i].is_compat) continue;
 
@@ -1137,6 +1146,12 @@ static void rz_run_modules_pre(struct zygisk_context *ctx) {
       zygisk_compat_call_pre_server(ctx->args.server);
     }
   }
+
+  if ((*ctx->env)->ExceptionCheck(ctx->env)) {
+    LOGE("A Zygisk module left a Java exception during pre-specialize");
+    (*ctx->env)->ExceptionDescribe(ctx->env);
+    (*ctx->env)->ExceptionClear(ctx->env);
+  }
 }
 
 static void rz_run_modules_post(struct zygisk_context *ctx) {
@@ -1168,6 +1183,12 @@ static void rz_run_modules_post(struct zygisk_context *ctx) {
     } else if (FLAG_GET(ctx, SERVER_FORK_AND_SPECIALIZE)) {
       zygisk_compat_call_post_server(ctx->args.server);
     }
+  }
+
+  if ((*ctx->env)->ExceptionCheck(ctx->env)) {
+    LOGE("A Zygisk module left a Java exception during post-specialize");
+    (*ctx->env)->ExceptionDescribe(ctx->env);
+    (*ctx->env)->ExceptionClear(ctx->env);
   }
 
   size_t modules_unloaded = 0;
@@ -1505,9 +1526,13 @@ static void hook_unloader(void) {
 
   PLT_HOOK_UNREGISTER("libandroid_runtime.so", property_get, false);
 
-  /* INFO: Load modules early on (before system server fork) to spread through all Zygotes */
-  if (!load_modules_only()) {
+  /* Load early when the VM is ready; otherwise specialize callbacks will load
+     modules with their guaranteed JNIEnv. */
+  JNIEnv *env = get_jni_env();
+  if (env && !load_modules_only(env)) {
     LOGE("Failed to load modules in hook_unloader");
+  } else if (!env) {
+    LOGD("JNIEnv unavailable; deferring module loading until specialization");
   }
 
   LOGD("ReZygisk unloader hooked successfully");

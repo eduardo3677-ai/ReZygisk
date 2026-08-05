@@ -183,7 +183,11 @@ void zygisk_compat_set_callbacks(
 size_t zygisk_compat_call_entry(void *entry, JNIEnv *env) {
   size_t before = compat_module_count;
   ((zygisk_compat_entry_fn)entry)(&compat_api_table, env);
-  if (env && (*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+  if (env && (*env)->ExceptionCheck(env)) {
+    LOGE("Zygisk compat module entry raised a Java exception");
+    (*env)->ExceptionDescribe(env);
+    (*env)->ExceptionClear(env);
+  }
   return compat_module_count - before;
 }
 

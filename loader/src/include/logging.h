@@ -23,6 +23,10 @@ static inline void rz_log_print(int priority, const char *tag, const char *fmt, 
   __android_log_vprint(priority, tag, fmt, ap);
   va_end(ap);
 
+  /* App-specialized children cannot write the root-owned native log under
+     SELinux. Logcat above remains available for diagnostics in those processes. */
+  if (geteuid() != 0) return;
+
   if (access("/data/adb/rezygisk/debug_logging", F_OK) == 0 ||
       access("/data/adb/modules/rezygisk/debug_logging", F_OK) == 0 ||
       access("/data/adb/rezygisk/rezygisk.log", F_OK) == 0) {

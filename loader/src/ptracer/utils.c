@@ -153,18 +153,10 @@ void *find_module_base(struct maps_info *map, const char *file) {
 
 void *find_func_addr(struct maps_info *local_info, struct maps_info *remote_info, const char *module, const char *func) {
   uint8_t *local_base = (uint8_t *)find_module_base(local_info, module);
-  if (local_base == NULL) {
-    LOGD("failed to find local base for module %s", module);
-
-    return NULL;
-  }
+  if (local_base == NULL) return NULL;
 
   uint8_t *remote_base = (uint8_t *)find_module_base(remote_info, module);
-  if (remote_base == NULL) {
-    LOGD("failed to find remote base for module %s", module);
-
-    return NULL;
-  }
+  if (remote_base == NULL) return NULL;
 
   LOGD("found local base %p remote base %p", local_base, remote_base);
 
@@ -177,8 +169,6 @@ void *find_func_addr(struct maps_info *local_info, struct maps_info *remote_info
 
   uint8_t *sym = (uint8_t *)getSymbAddress(mod, func);
   if (sym == NULL) {
-    LOGD("failed to find symbol %s in %s", func, module);
-
     ElfImg_destroy(mod);
 
     return NULL;
@@ -813,7 +803,7 @@ bool wait_for_ptrace_syscall_stop(int pid, int *status) {
 
     int stop_sig = WSTOPSIG(*status);
     int stop_event = (*status >> 16) & 0xff;
-    bool is_syscall_stop = stop_event == 0 && (stop_sig == SIGTRAP || stop_sig == (SIGTRAP | 0x80));
+    bool is_syscall_stop = stop_event == 0 && stop_sig == (SIGTRAP | 0x80);
 
     if ((stop_sig == SIGSTOP || stop_sig == SIGTRAP) && stop_event == PTRACE_EVENT_STOP) {
       if (step_retries++ >= 4) {
