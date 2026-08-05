@@ -75,4 +75,21 @@ export async function load() {
 
     _writeState(ConfigState)
   })
+
+  const rz_webui_logging_switch = document.getElementById('rz_webui_logging_switch')
+  if (rz_webui_logging_switch) {
+    exec('/system/bin/test -f /data/adb/rezygisk/debug_logging || /system/bin/test -f /data/adb/modules/rezygisk/debug_logging').then((res) => {
+      if (res && res.errno === 0) {
+        rz_webui_logging_switch.checked = true
+      }
+    })
+
+    utils.addListener(rz_webui_logging_switch, 'change', () => {
+      if (rz_webui_logging_switch.checked) {
+        exec('/system/bin/touch /data/adb/rezygisk/debug_logging /data/adb/modules/rezygisk/debug_logging 2>/dev/null || true')
+      } else {
+        exec('/system/bin/rm -f /data/adb/rezygisk/debug_logging /data/adb/modules/rezygisk/debug_logging /data/adb/rezygisk/rezygisk.log /data/adb/modules/rezygisk/rezygisk.log 2>/dev/null || true')
+      }
+    })
+  }
 }

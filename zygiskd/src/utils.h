@@ -22,17 +22,56 @@
   #define LOG_TAG "zygiskd" LP_SELECT("32", "64")
 #endif
 
-#define LOGI(...)                                              \
-  __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__); \
-  printf(__VA_ARGS__)
+#include <stdarg.h>
+#include <time.h>
+#include <unistd.h>
 
-#define LOGW(...)                                                \
-  __android_log_print(ANDROID_LOG_WARN, LOG_TAG, __VA_ARGS__);   \
-  printf(__VA_ARGS__)
+static inline void rz_daemon_log_print(int priority, const char *tag, const char *fmt, ...) {
+  va_list ap;
+  va_start(ap, fmt);
+  __android_log_vprint(priority, tag, fmt, ap);
+  va_end(ap);
 
-#define LOGE(...)                                                \
-  __android_log_print(ANDROID_LOG_ERROR , LOG_TAG, __VA_ARGS__); \
-  printf(__VA_ARGS__)
+  va_start(ap, fmt);
+  vprintf(fmt, ap);
+  va_end(ap);
+
+  if (access("/data/adb/rezygisk/debug_logging", F_OK) == 0 ||
+      access("/data/adb/modules/rezygisk/debug_logging", F_OK) == 0) {
+    FILE *f = fopen("/data/adb/rezygisk/rezygisk.log", "a");
+    if (!f) {
+      f = fopen("/data/adb/modules/rezygisk/rezygisk.log", "a");
+    }
+    if (f) {
+      time_t now = time(NULL);
+      struct tm *tm_info = localtime(&now);
+      char time_buf[32];
+      if (tm_info) strftime(time_buf, sizeof(time_buf), "%m-%d %H:%M:%S", tm_info);
+      else time_buf[0] = '\0';
+
+      const char *prio_str = "D";
+      switch (priority) {
+        case ANDROID_LOG_VERBOSE: prio_str = "V"; break;
+        case ANDROID_LOG_DEBUG:   prio_str = "D"; break;
+        case ANDROID_LOG_INFO:    prio_str = "I"; break;
+        case ANDROID_LOG_WARN:    prio_str = "W"; break;
+        case ANDROID_LOG_ERROR:   prio_str = "E"; break;
+        case ANDROID_LOG_FATAL:   prio_str = "F"; break;
+      }
+
+      fprintf(f, "%s %s/%s: ", time_buf, prio_str, tag);
+      va_start(ap, fmt);
+      vfprintf(f, fmt, ap);
+      va_end(ap);
+      fprintf(f, "\n");
+      fclose(f);
+    }
+  }
+}
+
+#define LOGI(...) rz_daemon_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
+#define LOGW(...) rz_daemon_log_print(ANDROID_LOG_WARN, LOG_TAG, __VA_ARGS__)
+#define LOGE(...) rz_daemon_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 
 #define ASSURE_SIZE_WRITE(area_name, subarea_name, sent_size, expected_size, return_type)                        \
   if (sent_size != (ssize_t)(expected_size)) {                                                                   \

@@ -62,6 +62,10 @@
         "title": "Enable system font",
         "description": "This option will enable system font in current WebUI. NOTE: May not be compatible with FlipFont"
       },
+      "logging": {
+        "title": "Enable ReZygisk File Logging",
+        "description": "Save ReZygisk logcat output and debug messages to /data/adb/rezygisk/rezygisk.log"
+      },
       "moduleDevelopers": "Module Developer(s)",
       "WebUIDevelopers": "WebUI Developer(s)",
       "orginalDevelopers": "Original Module Developer(s)",
