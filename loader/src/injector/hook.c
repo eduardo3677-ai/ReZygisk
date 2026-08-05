@@ -1128,10 +1128,10 @@ static void rz_run_modules_post(struct zygisk_context *ctx) {
   for (size_t i = 0; i < zygisk_module_length; i++) {
     struct rezygisk_module *m = &zygisk_modules[i];
 
-    if (m->is_compat) continue;
-
-    if (FLAG_GET(ctx, APP_SPECIALIZE)) rz_module_call_post_app_specialize(m, ctx->args.app);
-    else if (FLAG_GET(ctx, SERVER_FORK_AND_SPECIALIZE)) rz_module_call_post_server_specialize(m, ctx->args.server);
+    if (!m->is_compat) {
+      if (FLAG_GET(ctx, APP_SPECIALIZE)) rz_module_call_post_app_specialize(m, ctx->args.app);
+      else if (FLAG_GET(ctx, SERVER_FORK_AND_SPECIALIZE)) rz_module_call_post_server_specialize(m, ctx->args.server);
+    }
 
     if (!m->unload) {
       LOGD("Abandoning module library at %p", &m->lib);
