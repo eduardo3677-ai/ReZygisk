@@ -69,8 +69,8 @@ void *entry_thread(void *arg) {
              if the module companion already closed the fd.
   */
   struct stat st1;
-  if (fstat(fd, &st1) != -1 && st0.st_ino == st1.st_ino) {
-    LOGI(" - Client fd changed after module entry");
+  if (fstat(fd, &st1) != -1 && st0.st_dev == st1.st_dev && st0.st_ino == st1.st_ino) {
+    LOGI(" - Closing client fd after module entry");
 
     close(fd);
   }

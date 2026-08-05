@@ -374,6 +374,7 @@ void zygiskd_start(char *restrict argv[]) {
   while (1) {
     int client_fd = accept(socket_fd, NULL, NULL);
     if (client_fd == -1) {
+      if (errno == EINTR || errno == EAGAIN || errno == ECONNABORTED) continue;
       LOGE("accept: %s", strerror(errno));
 
       break;
@@ -386,13 +387,13 @@ void zygiskd_start(char *restrict argv[]) {
 
       close(client_fd);
 
-      break;
+      continue;
     } else if (len == 0) {
       LOGI("Client disconnected");
 
       close(client_fd);
 
-      break;
+      continue;
     }
 
     enum DaemonSocketAction action = (enum DaemonSocketAction)action8;

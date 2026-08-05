@@ -79,6 +79,7 @@ void zygisk_compat_set_callbacks(
 
 size_t zygisk_compat_get_count(void);
 void zygisk_compat_reset(void);
+void zygisk_compat_set_current_id(void *id);
 
 size_t zygisk_compat_call_entry(void *entry, JNIEnv *env);
 

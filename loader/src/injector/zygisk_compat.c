@@ -24,6 +24,12 @@ static void *cb_get_flags = NULL;
 
 static bool compat_unload_requested = false;
 
+static void *current_compat_encoded_id = NULL;
+
+void zygisk_compat_set_current_id(void *id) {
+  current_compat_encoded_id = id;
+}
+
 size_t zygisk_compat_get_count(void) {
   return compat_module_count;
 }
@@ -31,6 +37,7 @@ size_t zygisk_compat_get_count(void) {
 void zygisk_compat_reset(void) {
   compat_module_count = 0;
   compat_unload_requested = false;
+  current_compat_encoded_id = NULL;
 }
 
 static bool compat_register_module(struct zygisk_compat_api_table *table, struct zygisk_compat_module_abi *abi) {
@@ -45,7 +52,7 @@ static bool compat_register_module(struct zygisk_compat_api_table *table, struct
   }
 
   compat_modules[compat_module_count] = *abi;
-  table->impl = (void *)(uintptr_t)(compat_module_count + 1);
+  table->impl = current_compat_encoded_id ? current_compat_encoded_id : (void *)(uintptr_t)(compat_module_count + 1);
 
   LOGD("Zygisk compat module %zu registered, API version %ld", compat_module_count, abi->api_version);
 
@@ -75,25 +82,25 @@ static bool compat_plt_commit(void) {
 }
 
 static int compat_connect_companion(void *impl) {
-  (void)impl;
+  void *target_id = impl ? impl : current_compat_encoded_id;
   if (cb_connect_companion)
-    return ((int (*)(void *))cb_connect_companion)(NULL);
+    return ((int (*)(void *))cb_connect_companion)(target_id);
   return -1;
 }
 
 static void compat_set_option(void *impl, int opt) {
-  (void)impl;
+  void *target_id = impl ? impl : current_compat_encoded_id;
   if (opt == ZYGISK_OPTION_DLCLOSE_MODULE_LIBRARY) {
     compat_unload_requested = true;
   } else if (opt == ZYGISK_OPTION_FORCE_DENYLIST_UNMOUNT && cb_set_option) {
-    ((void (*)(void *, int))cb_set_option)(NULL, opt);
+    ((void (*)(void *, int))cb_set_option)(target_id, opt);
   }
 }
 
 static int compat_get_module_dir(void *impl) {
-  (void)impl;
+  void *target_id = impl ? impl : current_compat_encoded_id;
   if (cb_get_module_dir)
-    return ((int (*)(void *))cb_get_module_dir)(NULL);
+    return ((int (*)(void *))cb_get_module_dir)(target_id);
   return -1;
 }
 

@@ -1024,6 +1024,8 @@ static bool load_modules_only(void) {
 
     size_t compat_before = zygisk_compat_get_count();
 
+    zygisk_compat_set_current_id(ENCODE_ID((void *)zygisk_module_length));
+
     if (env) {
       zygisk_compat_call_entry(entry, env);
     }
