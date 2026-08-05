@@ -3,6 +3,7 @@ import { exec, toast } from '../../../../kernelsu.js'
 import { loadPage, setLanguage, reloadPage } from '../../../pageLoader.js'
 
 let availableLanguages = [ -1 /* INFO: To tell we haven't checked yet */ ]
+let languageListenerAttached = false
 
 // async function _setNewThemeIcon() {
 //   const back_icon = document.getElementById('sp_lang_close')
@@ -64,6 +65,9 @@ export async function onceViewAfterUpdate() {
 }
 
 export async function load() {
+  if (languageListenerAttached) return
+  languageListenerAttached = true
+
   // _setNewThemeIcon()
 
   // const sp_lang_close = document.getElementById('sp_lang_close')
@@ -79,6 +83,7 @@ export async function load() {
     if (!getLangLocate || typeof getLangLocate !== 'string') return
 
     document.removeEventListener('click', langButtonListener)
+    languageListenerAttached = false
 
     /* INFO: Strip .json from the end of the filename */
     setLanguage(getLangLocate.replace('.json', ''))
@@ -86,8 +91,7 @@ export async function load() {
     if (getLangLocate.includes('ar_')) main_html.setAttribute('dir', 'rtl')
     else main_html.setAttribute('dir', 'ltr')
 
-    loadPage('settings')
-
-    reloadPage()
+    await loadPage('settings')
+    await reloadPage()
   }, false)
 }

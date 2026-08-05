@@ -1,9 +1,7 @@
 <!DOCTYPE html>
 <html id="main_html" lang="en" dir="none">
   <head>
-    <meta name="viewport" content="initial-scale=1, width=device-width" />
-    <meta name="viewport" content="viewport-fit=cover" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 
     <link rel="stylesheet" type="text/css" href="https://mui.kernelsu.org/internal/insets.css">
 
@@ -34,12 +32,12 @@
     <!-- INFO: Bottom navbar -->
     <div id="navbar_support_div">
       <div id="navbar" class="radios">
-        <div class="navicon_support nav_dimc">
+        <div class="navicon_support nav_dimc nav_item">
           <input id="n_home" type="radio" name="navbutton" value="home"/>
           <label class="radio nav_dimc" for="n_home">
 
             <div class="navicon_support nav_dimc" style="display: grid; place-items: center;">
-              <div class="navicon_support nav_dimc" style="display: grid; place-items: center; width: 65px;">
+              <div class="navicon_support nav_dimc navicon_slot" style="display: grid; place-items: center;">
                 <div style="grid-area: 1 / 1;" id="ni_home"></div>
                 <div style="grid-area: 1 / 1;" id="nibg_home" class="navicon"></div>
               </div>
@@ -48,12 +46,12 @@
           </label>
         </div>
 
-        <div class="navicon_support nav_dimc">
+        <div class="navicon_support nav_dimc nav_item">
           <input id="n_modules" type="radio" name="navbutton" value="modules"/>
           <label class="radio nav_dimc" for="n_modules">
 
             <div class="navicon_support nav_dimc" style="display: grid; place-items: center;">
-              <div class="navicon_support nav_dimc" style="display: grid; place-items: center; width: 65px;">
+              <div class="navicon_support nav_dimc navicon_slot" style="display: grid; place-items: center;">
                 <div style="grid-area: 1 / 1;" id="ni_modules"></div>
                 <div style="grid-area: 1 / 1;" id="nibg_modules" class="navicon"></div>
               </div>
@@ -62,12 +60,12 @@
           </label>
         </div>
 
-        <div class="navicon_support nav_dimc">
+        <div class="navicon_support nav_dimc nav_item">
           <input id="n_actions" type="radio" name="navbutton" value="actions"/>
           <label class="radio nav_dimc" for="n_actions">
 
             <div class="navicon_support nav_dimc" style="display: grid; place-items: center;">
-              <div class="navicon_support nav_dimc" style="display: grid; place-items: center; width: 65px;">
+              <div class="navicon_support nav_dimc navicon_slot" style="display: grid; place-items: center;">
                 <div style="grid-area: 1 / 1;" id="ni_actions"></div>
                 <div style="grid-area: 1 / 1;" id="nibg_actions" class="navicon"></div>
               </div>
@@ -77,12 +75,26 @@
           </label>
         </div>
 
-        <div class="navicon_support nav_dimc">
+        <div class="navicon_support nav_dimc nav_item">
+          <input id="n_logs" type="radio" name="navbutton" value="logs"/>
+          <label class="radio nav_dimc" for="n_logs">
+
+            <div class="navicon_support nav_dimc" style="display: grid; place-items: center;">
+              <div class="navicon_support nav_dimc navicon_slot" style="display: grid; place-items: center;">
+                <div style="grid-area: 1 / 1;" id="ni_logs"></div>
+                <div style="grid-area: 1 / 1;" id="nibg_logs" class="navicon"></div>
+              </div>
+              <div id="nav_logs_title" class="navtitle nav_dimc">Logs</div>
+            </div>
+          </label>
+        </div>
+
+        <div class="navicon_support nav_dimc nav_item">
           <input id="n_settings" type="radio" name="navbutton" value="settings"/>
           <label class="radio nav_dimc" for="n_settings">
 
             <div class="navicon_support nav_dimc" style="display: grid; place-items: center;">
-              <div class="navicon_support nav_dimc" style="display: grid; place-items: center; width: 65px;">
+              <div class="navicon_support nav_dimc navicon_slot" style="display: grid; place-items: center;">
                 <div style="grid-area: 1 / 1;" id="ni_settings"></div>
                 <div style="grid-area: 1 / 1;" id="nibg_settings" class="navicon"></div>
               </div>

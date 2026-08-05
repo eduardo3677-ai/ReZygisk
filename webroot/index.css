@@ -41,6 +41,7 @@
 }
 
 #navbar {
+  --navicon-width: min(65px, calc((100vw - 24px) / 5));
   display: flex;
   position: fixed;
   z-index: 7;
@@ -48,16 +49,32 @@
   justify-content: space-between;
   background-color: var(--dim);
   left: 0; right: 0; bottom: 0;
-  padding: 20px 25px;
+  gap: 2px;
+  padding: 12px 10px calc(10px + var(--window-inset-bottom, env(safe-area-inset-bottom)));
   font-size: 20px;
+}
+
+.nav_item,
+.nav_item > .radio {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.nav_item > .radio {
+  display: block;
+  width: 100%;
+}
+
+.navicon_slot {
+  width: var(--navicon-width) !important;
 }
 
 .navtitle {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: small;
-  margin-top: 8px;
+  font-size: clamp(10px, 2.5vw, 12px);
+  margin-top: 6px;
   opacity: 1;
 }
 
@@ -73,7 +90,7 @@
 }
 
 .navicon.show {
-  width: 65px;
+  width: var(--navicon-width);
   animation: openNav 0.15s;
 }
 
@@ -86,6 +103,7 @@
     margin-bottom: 30px;
     border-radius: 60px;
     padding: 10px 10px;
+    --navicon-width: 65px;
   }
   .navtitle {
     display: none;

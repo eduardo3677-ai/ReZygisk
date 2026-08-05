@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
+#include <stdint.h>
 
 #include <sys/stat.h>
 #include <unistd.h>
@@ -16,9 +17,9 @@
 static struct {
   struct package_config *configs;
   size_t size;
-  dev_t device;
-  ino_t inode;
-  off_t file_size;
+  uint64_t device;
+  uint64_t inode;
+  int64_t file_size;
   time_t mtime;
   bool loaded;
 } apatch_config_cache = { 0 };

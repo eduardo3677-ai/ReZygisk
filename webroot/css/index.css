@@ -12,6 +12,18 @@
   --button-enabled: #535353;
   --desktop-navbar: #252525;
   --desktop-navicon: #3a3a3a;
+  --log-console: #101318;
+  --log-border: #303946;
+  --log-text: #d9e1eb;
+  --log-muted: #8f9eaf;
+  --log-context: #89c9ff;
+  --log-tag: #d5aeff;
+  --log-verbose: #91a0b2;
+  --log-debug: #aab6ff;
+  --log-info: #70dba2;
+  --log-warn: #ffc56b;
+  --log-error: #ff8b95;
+  --log-fatal: #ff76bc;
 
   /* Locked Color */
   --lock: #fff;
@@ -254,4 +266,3 @@ body {
     transform: translateX(100%);
   }
 }
-

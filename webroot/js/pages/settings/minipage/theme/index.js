@@ -1,6 +1,8 @@
 import { setThemeData, themeList } from '../../../../themes/main.js'
 import { loadPage } from '../../../pageLoader.js'
 
+let themeListenerAttached = false
+
 export async function loadOnce() {
 }
 
@@ -11,6 +13,9 @@ export async function onceViewAfterUpdate() {
 }
 
 export async function load() {
+  if (themeListenerAttached) return
+  themeListenerAttached = true
+
   document.addEventListener('click', async function themeButtonListener(event) {
     const themeListKey = Object.keys(themeList)
     const getThemeMode = event.target.getAttribute('theme-data')
@@ -18,6 +23,7 @@ export async function load() {
     if (!getThemeMode || typeof getThemeMode !== 'string' || !themeListKey.includes(getThemeMode)) return
 
     document.removeEventListener('click', themeButtonListener)
+    themeListenerAttached = false
 
     themeList[getThemeMode](true)
 

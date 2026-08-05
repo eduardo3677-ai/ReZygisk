@@ -14,6 +14,7 @@ export const allMainPages = [
   'home',
   'modules',
   'actions',
+  'logs',
   'settings'
 ]
 
@@ -468,6 +469,9 @@ export async function loadPage(pageId) {
         document.getElementById(`${parentPage}_css`).media = 'not all'
       }
 
+      /* INFO: The parent view stays mounted below a mini page, so its handlers
+         must be removed before the destination page registers fresh ones. */
+      utils.removeAllListeners()
       await initializePage(pageId, pageSpecificContent, targetNeedsRevert)
 
       if (targetIsMiniPage) {
@@ -586,13 +590,11 @@ export async function reloadPage() {
   const pageId = whichCurrentPage()
 
   const pageSpecificContent = document.getElementById(`${pageId}_content`)
+  utils.removeAllListeners()
   pageSpecificContent.innerHTML = await solveStrings(await loadHTML(pageId), pageId)
 
   const module = await importPageJS(pageId)
-  module.load()
-  /* INFO: When reloading the page, due to the way the HTML is reloaded, the JavaScript
-             listeners are lost, so we need to reapply them to ensure everything works. */
-  utils.reapplyListeners()
+  await module.load()
 }
 
 export function getStrings(pageId, forceDefault = false) {
@@ -600,9 +602,12 @@ export function getStrings(pageId, forceDefault = false) {
     .then((response) => response.json())
     .then((data) => {
       return {
-        ...data.pages[pageId],
+        ...(data.pages[pageId] || {}),
         ...data.globals,
-        navbar: Object.fromEntries(allPages.map((page) => [page, data.pages[page].title]))
+        navbar: Object.fromEntries(allMainPages.map((page) => [
+          page,
+          (data.pages[page] && data.pages[page].title) || `${page.charAt(0).toUpperCase()}${page.slice(1)}`
+        ]))
       }
     })
     .catch((err) => {
@@ -643,7 +648,7 @@ window.addEventListener('error', function (event) {
 
   var msg = String(event.message || '').replace(/'/g, "'\\''")
   var stack = String(event.error && event.error.stack || '').replace(/'/g, "'\\''")
-  exec("echo 'Error: " + msg + "\\n\\n" + stack + "' > /data/adb/rezygisk/webui_error.log")
+  exec("printf '%s\\n' 'Error: " + msg + "\\n\\n" + stack + "' >> /data/adb/rezygisk/webui_error.log")
 })
 
 window.addEventListener('unhandledrejection', function (event) {
@@ -653,7 +658,7 @@ window.addEventListener('unhandledrejection', function (event) {
 
   var reason = String(event.reason || '').replace(/'/g, "'\\''")
   var stack = String(event.reason && event.reason.stack || '').replace(/'/g, "'\\''")
-  exec("echo 'Error (Unhandled Rejection): " + reason + "\\n\\n" + stack + "' > /data/adb/rezygisk/webui_error.log")
+  exec("printf '%s\\n' 'Error (Unhandled Rejection): " + reason + "\\n\\n" + stack + "' >> /data/adb/rezygisk/webui_error.log")
 })
 
 window.addEventListener('popstate', async () => {

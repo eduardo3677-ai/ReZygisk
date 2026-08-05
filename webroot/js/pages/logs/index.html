@@ -1,0 +1,37 @@
+<div class="logs_panel">
+  <div class="header logs_header">
+    <div>ReZygisk: Logs</div>
+    <button id="rz_log_refresh_btn" class="logs_icon_button" type="button" title="Refresh logs" aria-label="Refresh logs">Refresh</button>
+  </div>
+
+  <div class="logs_controls">
+    <label class="logs_field" for="rz_log_level_select">
+      <span>Level</span>
+      <select id="rz_log_level_select">
+        <option value="ALL">All levels</option>
+        <option value="E">Errors and fatal</option>
+        <option value="W">Warnings and above</option>
+        <option value="I">Info and above</option>
+        <option value="D">Debug and above</option>
+      </select>
+    </label>
+
+    <label class="logs_field logs_search_field" for="rz_log_search_input">
+      <span>Search</span>
+      <input id="rz_log_search_input" type="search" autocomplete="off" placeholder="Message, tag, PID..." />
+    </label>
+
+    <div class="logs_actions" aria-label="Log actions">
+      <button id="rz_log_copy_btn" class="logs_control_button" type="button">Copy all</button>
+      <button id="rz_log_download_btn" class="logs_control_button" type="button">Save all</button>
+      <button id="rz_log_clear_btn" class="logs_control_button logs_danger_button" type="button">Clear</button>
+    </div>
+  </div>
+
+  <div class="logs_statusbar">
+    <span id="rz_log_status">Loading logs...</span>
+    <button id="rz_log_jump_btn" class="logs_jump_button" type="button" hidden>Jump to latest</button>
+  </div>
+
+  <div id="rz_log_console" class="logs_console" tabindex="0" aria-label="ReZygisk logs" aria-live="polite"></div>
+</div>

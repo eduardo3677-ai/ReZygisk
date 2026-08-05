@@ -1,6 +1,7 @@
 import { whichCurrentPage } from '../navbar.js'
 import { getStrings } from '../pageLoader.js'
 import { exec, toast } from '../../kernelsu.js'
+import utils from '../utils.js'
 
 async function _getMonitorState() {
   const stateCmd = await exec('/system/bin/cat /data/adb/rezygisk/state.json')
@@ -53,7 +54,7 @@ export async function load() {
   const monitor_status = document.getElementById('monitor_status')
   const strings = await getStrings(whichCurrentPage())
 
-  monitor_start.addEventListener('click', async () => {
+  utils.addListener(monitor_start, 'click', async () => {
     if (![ strings.monitor.status.tracing, strings.monitor.status.stopping, strings.monitor.status.stopped ].includes(monitor_status.innerHTML)) return;
     monitor_status.innerHTML = strings.monitor.status.tracing
     const res = await exec('/data/adb/modules/rezygisk/bin/zygisk-ptrace64 ctl start')
@@ -63,7 +64,7 @@ export async function load() {
     }
   })
 
-  monitor_stop.addEventListener('click', async () => {
+  utils.addListener(monitor_stop, 'click', async () => {
     monitor_status.innerHTML = strings.monitor.status.exiting
     const res = await exec('/data/adb/modules/rezygisk/bin/zygisk-ptrace64 ctl exit')
     if (res.errno !== 0) {
@@ -72,7 +73,7 @@ export async function load() {
     }
   })
 
-  monitor_pause.addEventListener('click', async () => {
+  utils.addListener(monitor_pause, 'click', async () => {
     if (![ strings.monitor.status.tracing, strings.monitor.status.stopping, strings.monitor.status.stopped ].includes(monitor_status.innerHTML)) return;
     monitor_status.innerHTML = strings.monitor.status.stopped
     const res = await exec('/data/adb/modules/rezygisk/bin/zygisk-ptrace64 ctl stop')

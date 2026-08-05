@@ -4,6 +4,7 @@ const CONFIG_FILE = '/data/adb/rezygisk/config.json'
 const DEBUG_FLAG_REZYGISK = '/data/adb/rezygisk/debug_logging'
 const DEBUG_FLAG_MODULE = '/data/adb/modules/rezygisk/debug_logging'
 const LOG_FILE = '/data/adb/rezygisk/rezygisk.log'
+const LOG_FILE_FALLBACK = '/data/adb/modules/rezygisk/rezygisk.log'
 const ERROR_LOG = '/data/adb/rezygisk/webui_error.log'
 
 export const defaultConfig = {
@@ -73,7 +74,7 @@ export async function savePersistentConfig(partialConfig) {
     if (cachedConfig.debugLogging) {
       await exec(`/system/bin/mkdir -p /data/adb/rezygisk && /system/bin/touch ${DEBUG_FLAG_REZYGISK} ${DEBUG_FLAG_MODULE} 2>/dev/null || true`).catch(() => {})
     } else {
-      await exec(`/system/bin/rm -f ${DEBUG_FLAG_REZYGISK} ${DEBUG_FLAG_MODULE} ${LOG_FILE} ${ERROR_LOG} 2>/dev/null || true`).catch(() => {})
+      await exec(`/system/bin/rm -f ${DEBUG_FLAG_REZYGISK} ${DEBUG_FLAG_MODULE} ${LOG_FILE} ${LOG_FILE_FALLBACK} ${ERROR_LOG} 2>/dev/null || true`).catch(() => {})
     }
   }
 
