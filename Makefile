@@ -129,7 +129,7 @@ installMagisk: build
 	$(ADB_CMD)su -M -c "magisk --install-module $(INSTALL_PATH)"
 
 installAPatch: build
-	$(ADB_CMD)su -c "/data/adb/apd module install $(INSTALL_PATH)"
+	$(ADB_CMD)su -c "/data/adb/ap/bin/apd module install $(INSTALL_PATH)"
 
 installKsuAndReboot: installKsu
 	$(REBOOT_CMD)

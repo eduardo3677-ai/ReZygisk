@@ -99,6 +99,4 @@ void zygisk_compat_call_post_app(const void *args);
 void zygisk_compat_call_pre_server(void *args);
 void zygisk_compat_call_post_server(const void *args);
 
-bool zygisk_compat_is_unload_requested(void);
-
 #endif

@@ -108,7 +108,7 @@ DCL_PRE_POST(nativeForkSystemServer);
 #undef DCL_PRE_POST
 
 static inline bool is_zygote_child(struct zygisk_context *ctx) {
-  return ctx->pid <= 0;
+  return ctx->pid == 0;
 }
 
 struct plt_hook_entry {
@@ -734,22 +734,38 @@ static bool api_plt_hook_commit_v4(void) {
 #define ENCODE_ID(id) ((void *)((size_t)(id) + RZID_MAGIC))
 #define DECODE_ID(ptr) ((size_t)(ptr) - RZID_MAGIC)
 
+static size_t loading_module_index = SIZE_MAX;
+
+static bool module_id_from_impl(void *id, size_t *index) {
+  size_t encoded_id = (size_t)id;
+  if (!zygisk_modules || encoded_id < RZID_MAGIC) return false;
+
+  size_t module_index = DECODE_ID(id);
+  if (module_index >= zygisk_module_length && module_index != loading_module_index) return false;
+
+  *index = module_index;
+
+  return true;
+}
+
 static int api_connect_companion(void *id) {
   if (!g_ctx) return -1;
 
-  if ((size_t)id < RZID_MAGIC || (size_t)id >= RZID_MAGIC + zygisk_module_length) {
+  size_t module_index = 0;
+  if (!module_id_from_impl(id, &module_index)) {
     LOGE("Invalid (encoded) module id %zu", (size_t)id);
 
     return -1;
   }
 
-  return rezygiskd_connect_companion(DECODE_ID(id));
+  return rezygiskd_connect_companion(module_index);
 }
 
 static void api_set_option(void *id, enum rezygisk_options opt) {
   if (!g_ctx) return;
 
-  if ((size_t)id < RZID_MAGIC || (size_t)id >= RZID_MAGIC + zygisk_module_length) {
+  size_t module_index = 0;
+  if (!module_id_from_impl(id, &module_index)) {
     LOGE("Invalid (encoded) module id %zu", (size_t)id);
 
     return;
@@ -762,7 +778,7 @@ static void api_set_option(void *id, enum rezygisk_options opt) {
       break;
     }
     case DLCLOSE_MODULE_LIBRARY: {
-      struct rezygisk_module *m_lib = &zygisk_modules[DECODE_ID(id)];
+      struct rezygisk_module *m_lib = &zygisk_modules[module_index];
       m_lib->unload = true;
 
       break;
@@ -773,13 +789,14 @@ static void api_set_option(void *id, enum rezygisk_options opt) {
 static int api_get_module_dir(void *id) {
   if (!g_ctx) return -1;
 
-  if ((size_t)id < RZID_MAGIC || (size_t)id >= RZID_MAGIC + zygisk_module_length) {
+  size_t module_index = 0;
+  if (!module_id_from_impl(id, &module_index)) {
     LOGE("Invalid (encoded) module id %zu", (size_t)id);
 
     return -1;
   }
 
-  return rezygiskd_get_module_dir(DECODE_ID(id));
+  return rezygiskd_get_module_dir(module_index);
 }
 
 static uint32_t api_get_flags(void) {
@@ -789,11 +806,18 @@ static uint32_t api_get_flags(void) {
 }
 
 bool rezygisk_module_register(struct rezygisk_api *api, struct rezygisk_abi const *target_module) {
-  if (!g_ctx || !api || !target_module || target_module->api_version > REZYGISK_API_VERSION) return false;
+  if (!g_ctx || !api || !target_module || target_module->api_version < 1 || target_module->api_version > REZYGISK_API_VERSION) return false;
+
+  size_t module_index = 0;
+  if (!module_id_from_impl(api->impl, &module_index) || api != &zygisk_modules[module_index].api) {
+    LOGE("Module attempted to register with an invalid implementation pointer");
+
+    return false;
+  }
 
   LOGD("Registering module with API version %ld", target_module->api_version);
 
-  struct rezygisk_module *m = &zygisk_modules[DECODE_ID(api->impl)];
+  struct rezygisk_module *m = &zygisk_modules[module_index];
   m->abi = *target_module;
   m->api = *api;
 
@@ -836,6 +860,12 @@ static void rz_fork_pre(struct zygisk_context *ctx) {
   */
   sigmask(SIG_BLOCK, SIGCHLD);
   ctx->pid = old_fork();
+  if (ctx->pid < 0) {
+    PLOGE("fork");
+    sigmask(SIG_UNBLOCK, SIGCHLD);
+
+    return;
+  }
   if (ctx->pid != 0 || FLAG_GET(ctx, SKIP_FD_SANITIZATION)) return;
 
   /* INFO: Record all open fds */
@@ -982,7 +1012,13 @@ static bool load_modules_only(void) {
     return false;
   }
 
-  zygisk_modules = (struct rezygisk_module *)malloc(ms.modules_count * sizeof(struct rezygisk_module));
+  if (ms.modules_count == 0) {
+    free_modules(&ms);
+
+    return true;
+  }
+
+  zygisk_modules = (struct rezygisk_module *)calloc(ms.modules_count, sizeof(struct rezygisk_module));
   if (!zygisk_modules) {
     LOGE("Failed to allocate memory for modules");
 
@@ -1005,6 +1041,7 @@ static bool load_modules_only(void) {
   );
 
   JNIEnv *env = get_jni_env();
+  size_t removed_modules = 0;
 
   for (size_t i = 0; i < ms.modules_count; i++) {
     const char *lib_path = ms.modules[i];
@@ -1012,7 +1049,7 @@ static bool load_modules_only(void) {
     if (!csoloader_load(&zygisk_modules[zygisk_module_length].lib, lib_path)) {
       LOGE("Failed to load module [%s]", lib_path);
 
-      rezygiskd_remove_module(i);
+      if (rezygiskd_remove_module(i - removed_modules)) removed_modules++;
 
       continue;
     }
@@ -1023,25 +1060,26 @@ static bool load_modules_only(void) {
 
       csoloader_unload(&zygisk_modules[zygisk_module_length].lib);
 
-      rezygiskd_remove_module(i);
+      if (rezygiskd_remove_module(i - removed_modules)) removed_modules++;
 
       continue;
     }
 
     size_t compat_before = zygisk_compat_get_count();
 
-    zygisk_compat_set_current_id(ENCODE_ID((void *)zygisk_module_length));
+    loading_module_index = zygisk_module_length;
+    zygisk_compat_set_current_id(ENCODE_ID((void *)loading_module_index));
 
     if (env) {
       zygisk_compat_call_entry(entry, env);
     }
+    loading_module_index = SIZE_MAX;
 
     if (zygisk_compat_get_count() > compat_before) {
       LOGD("Module [%s] uses Magisk Zygisk ABI (compat mode)", lib_path);
 
       zygisk_modules[zygisk_module_length].zygisk_module_entry = NULL;
       zygisk_modules[zygisk_module_length].is_compat = true;
-      zygisk_modules[zygisk_module_length].unload = zygisk_compat_is_unload_requested();
     } else {
       LOGD("Module [%s] uses ReZygisk native ABI", lib_path);
 
@@ -1141,13 +1179,17 @@ static void rz_run_modules_post(struct zygisk_context *ctx) {
       else if (FLAG_GET(ctx, SERVER_FORK_AND_SPECIALIZE)) rz_module_call_post_server_specialize(m, ctx->args.server);
     }
 
-    LOGD("Abandoning module library at %p", &m->lib);
-    csoloader_abandon(&m->lib);
-    modules_unloaded++;
+    if (m->unload) {
+      LOGD("Unloading module library at %p", &m->lib);
+      if (csoloader_unload(&m->lib)) modules_unloaded++;
+    } else {
+      LOGD("Abandoning module library at %p", &m->lib);
+      csoloader_abandon(&m->lib);
+    }
   }
 
   if (zygisk_module_length > 0)
-    LOGD("Modules unloaded: %zu/%zu", modules_unloaded, zygisk_module_length);
+    LOGD("Modules explicitly unloaded: %zu/%zu", modules_unloaded, zygisk_module_length);
 }
 
 static void rz_app_specialize_pre(struct zygisk_context *ctx) {

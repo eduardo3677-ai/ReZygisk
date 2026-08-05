@@ -10,33 +10,21 @@
 
 #include "apatch.h"
 
-#define APATCH_CONFIG_CACHE_SIZE 64
+#define APATCH_APD_PATH "/data/adb/ap/bin/apd"
+#define APATCH_PACKAGE_CONFIG_PATH "/data/adb/ap/package_config"
 
 static struct {
   struct package_config *configs;
   size_t size;
+  dev_t device;
+  ino_t inode;
+  off_t file_size;
+  time_t mtime;
   bool loaded;
-} apatch_config_cache = { NULL, 0, false };
+} apatch_config_cache = { 0 };
 
 void apatch_get_existence(struct root_impl_state *state) {
-  if (access("/data/adb/ap/bin/apd", F_OK) != 0) {
-    state->state = Inexistent;
-
-    return;
-  }
-
-  const char *PATH = getenv("PATH");
-  if (PATH == NULL) {
-    LOGE("Failed to get PATH environment variable");
-
-    state->state = Inexistent;
-
-    return;
-  }
-
-  if (strstr(PATH, "/data/adb/ap/bin") == NULL) {
-    LOGE("APatch's APD binary is not in PATH");
-
+  if (access(APATCH_APD_PATH, X_OK) != 0) {
     state->state = Inexistent;
 
     return;
@@ -45,7 +33,7 @@ void apatch_get_existence(struct root_impl_state *state) {
   char apatch_version[32];
   const char *const argv[] = { "apd", "-V", NULL };
 
-  if (!exec_command(apatch_version, sizeof(apatch_version), "/data/adb/apd", argv)) {
+  if (!exec_command(apatch_version, sizeof(apatch_version), APATCH_APD_PATH, argv)) {
     LOGE("Failed to execute apd binary: %s", strerror(errno));
 
     state->state = Inexistent;
@@ -53,7 +41,25 @@ void apatch_get_existence(struct root_impl_state *state) {
     return;
   }
 
-  int version = atoi(apatch_version + strlen("apd "));
+  const char *prefix = "apd ";
+  if (strncmp(apatch_version, prefix, strlen(prefix)) != 0) {
+    LOGE("Unexpected apd version output: %s", apatch_version);
+
+    state->state = Abnormal;
+
+    return;
+  }
+
+  char *end = NULL;
+  errno = 0;
+  long version = strtol(apatch_version + strlen(prefix), &end, 10);
+  if (errno != 0 || end == apatch_version + strlen(prefix) || *end != '\0') {
+    LOGE("Invalid apd version output: %s", apatch_version);
+
+    state->state = Abnormal;
+
+    return;
+  }
 
   if (version == 0) state->state = Abnormal;
   else if (version >= MIN_APATCH_VERSION && version <= 999999) state->state = Supported;
@@ -68,45 +74,42 @@ struct package_config {
   bool umount_needed;
 };
 
-struct packages_config {
-  struct package_config *configs;
-  size_t size;
-};
-
-void _apatch_free_package_config(struct packages_config *restrict config) {
-  for (size_t i = 0; i < config->size; i++) {
-    free(config->configs[i].process);
+static void free_package_configs(struct package_config *configs, size_t size) {
+  for (size_t i = 0; i < size; i++) {
+    free(configs[i].process);
   }
 
-  free(config->configs);
+  free(configs);
 }
 
-/* WARNING: Dynamic memory based */
-bool _apatch_get_package_config(struct packages_config *restrict config) {
-  if (apatch_config_cache.loaded) {
-    config->configs = malloc(apatch_config_cache.size * sizeof(struct package_config));
-    if (!config->configs) return false;
+static bool apatch_config_is_current(const struct stat *st) {
+  return apatch_config_cache.loaded &&
+         apatch_config_cache.device == st->st_dev &&
+         apatch_config_cache.inode == st->st_ino &&
+         apatch_config_cache.file_size == st->st_size &&
+         apatch_config_cache.mtime == st->st_mtime;
+}
 
-    for (size_t i = 0; i < apatch_config_cache.size; i++) {
-      config->configs[i].process = strdup(apatch_config_cache.configs[i].process);
-      config->configs[i].uid = apatch_config_cache.configs[i].uid;
-      config->configs[i].root_granted = apatch_config_cache.configs[i].root_granted;
-      config->configs[i].umount_needed = apatch_config_cache.configs[i].umount_needed;
-    }
-    config->size = apatch_config_cache.size;
+static bool apatch_load_package_config(void) {
+  struct stat st;
+  if (stat(APATCH_PACKAGE_CONFIG_PATH, &st) == -1) {
+    LOGE("Failed to stat APatch's package_config: %s", strerror(errno));
 
-    return true;
+    return false;
   }
 
-  config->configs = NULL;
-  config->size = 0;
+  if (apatch_config_is_current(&st)) return true;
 
-  FILE *fp = fopen("/data/adb/ap/package_config", "r");
+  FILE *fp = fopen(APATCH_PACKAGE_CONFIG_PATH, "r");
   if (fp == NULL) {
     LOGE("Failed to open APatch's package_config: %s", strerror(errno));
 
     return false;
   }
+
+  struct package_config *configs = NULL;
+  size_t size = 0;
+  size_t capacity = 0;
 
   char line[1024];
   /* INFO: Skip the CSV header */
@@ -119,17 +122,6 @@ bool _apatch_get_package_config(struct packages_config *restrict config) {
   }
 
   while (fgets(line, sizeof(line), fp) != NULL) {
-    struct package_config *tmp_configs = realloc(config->configs, (config->size + 1) * sizeof(struct package_config));
-    if (tmp_configs == NULL) {
-      LOGE("Failed to realloc APatch config struct: %s", strerror(errno));
-
-      _apatch_free_package_config(config);
-      fclose(fp);
-
-      return false;
-    }
-    config->configs = tmp_configs;
-
     char *save_ptr = NULL;
     const char *process_str = strtok_r(line, ",", &save_ptr);
     if (process_str == NULL) continue;
@@ -143,72 +135,76 @@ bool _apatch_get_package_config(struct packages_config *restrict config) {
     const char *uid_str = strtok_r(NULL, ",", &save_ptr);
     if (uid_str == NULL) continue;
 
-    config->configs[config->size].process = strdup(process_str);
-    if (config->configs[config->size].process == NULL) {
+    char *process = strdup(process_str);
+    if (process == NULL) {
       LOGE("Failed to strdup for the process \"%s\": %s", process_str, strerror(errno));
 
-      _apatch_free_package_config(config);
-      fclose(fp);
-
-      return false;
+      goto fail;
     }
-    config->configs[config->size].uid = (uid_t)atoi(uid_str);
-    config->configs[config->size].root_granted = strcmp(allow_str, "1") == 0;
-    config->configs[config->size].umount_needed = strcmp(exclude_str, "1") == 0;
 
-    config->size++;
+    if (size == capacity) {
+      size_t new_capacity = capacity == 0 ? 16 : capacity * 2;
+      struct package_config *tmp_configs = realloc(configs, new_capacity * sizeof(*configs));
+      if (tmp_configs == NULL) {
+        LOGE("Failed to realloc APatch config struct: %s", strerror(errno));
+
+        free(process);
+
+        goto fail;
+      }
+
+      configs = tmp_configs;
+      capacity = new_capacity;
+    }
+
+    configs[size] = (struct package_config){
+      .process = process,
+      .uid = (uid_t)atoi(uid_str),
+      .root_granted = strcmp(allow_str, "1") == 0,
+      .umount_needed = strcmp(exclude_str, "1") == 0
+    };
+    size++;
   }
 
   fclose(fp);
 
-  apatch_config_cache.configs = malloc(config->size * sizeof(struct package_config));
-  if (apatch_config_cache.configs) {
-    for (size_t i = 0; i < config->size; i++) {
-      apatch_config_cache.configs[i].process = strdup(config->configs[i].process);
-      apatch_config_cache.configs[i].uid = config->configs[i].uid;
-      apatch_config_cache.configs[i].root_granted = config->configs[i].root_granted;
-      apatch_config_cache.configs[i].umount_needed = config->configs[i].umount_needed;
-    }
-    apatch_config_cache.size = config->size;
-    apatch_config_cache.loaded = true;
-  }
+  free_package_configs(apatch_config_cache.configs, apatch_config_cache.size);
+  apatch_config_cache.configs = configs;
+  apatch_config_cache.size = size;
+  apatch_config_cache.device = st.st_dev;
+  apatch_config_cache.inode = st.st_ino;
+  apatch_config_cache.file_size = st.st_size;
+  apatch_config_cache.mtime = st.st_mtime;
+  apatch_config_cache.loaded = true;
 
   return true;
+
+  fail:
+    fclose(fp);
+    free_package_configs(configs, size);
+
+    return false;
 }
 
 bool apatch_uid_granted_root(uid_t uid) {
-  struct packages_config config;
-  if (!_apatch_get_package_config(&config)) return false;
+  if (!apatch_load_package_config()) return false;
 
-  for (size_t i = 0; i < config.size; i++) {
-    if (config.configs[i].uid != uid) continue;
+  for (size_t i = 0; i < apatch_config_cache.size; i++) {
+    if (apatch_config_cache.configs[i].uid != uid) continue;
 
-    /* INFO: This allow us to copy the information to avoid use-after-free */
-    bool root_granted = config.configs[i].root_granted;
-
-    _apatch_free_package_config(&config);
-
-    return root_granted;
+    return apatch_config_cache.configs[i].root_granted;
   }
-
-  _apatch_free_package_config(&config);
 
   return false;
 }
 
 bool apatch_uid_should_umount(uid_t uid, const char *const process) {
-  struct packages_config config;
-  if (!_apatch_get_package_config(&config)) return false;
+  if (!apatch_load_package_config()) return false;
 
-  for (size_t i = 0; i < config.size; i++) {
-    if (config.configs[i].uid != uid) continue;
+  for (size_t i = 0; i < apatch_config_cache.size; i++) {
+    if (apatch_config_cache.configs[i].uid != uid) continue;
 
-    /* INFO: This allow us to copy the information to avoid use-after-free */
-    bool umount_needed = config.configs[i].umount_needed;
-
-    _apatch_free_package_config(&config);
-
-    return umount_needed;
+    return apatch_config_cache.configs[i].umount_needed;
   }
 
   /* INFO: Isolated services have different UIDs than the main app, and
@@ -216,25 +212,19 @@ bool apatch_uid_should_umount(uid_t uid, const char *const process) {
              to the isolated service, we add this so that in case it fails,
              this should avoid it pass through as Mounted.
   */
-  if (IS_ISOLATED_SERVICE(uid)) {
+  if (IS_ISOLATED_SERVICE(uid) && process) {
     size_t targeted_process_length = strlen(process);
 
-    for (size_t i = 0; i < config.size; i++) {
-      size_t config_process_length = strlen(config.configs[i].process);
-      size_t smallest_process_length = targeted_process_length < config_process_length ? targeted_process_length : config_process_length;
+    for (size_t i = 0; i < apatch_config_cache.size; i++) {
+      size_t config_process_length = strlen(apatch_config_cache.configs[i].process);
+      if (targeted_process_length < config_process_length) continue;
 
-      if (strncmp(config.configs[i].process, process, smallest_process_length) != 0) continue;
+      if (strncmp(apatch_config_cache.configs[i].process, process, config_process_length) != 0) continue;
+      if (process[config_process_length] != '\0' && process[config_process_length] != ':') continue;
 
-      /* INFO: This allow us to copy the information to avoid use-after-free */
-      bool umount_needed = config.configs[i].umount_needed;
-
-      _apatch_free_package_config(&config);
-
-      return umount_needed;
+      return apatch_config_cache.configs[i].umount_needed;
     }
   }
-
-  _apatch_free_package_config(&config);
 
   return false;
 }

@@ -29,9 +29,12 @@ static void *cb_get_flags = NULL;
 static void *cb_plt_register_v4 = NULL;
 static void *cb_exempt_fd = NULL;
 
-static bool compat_unload_requested = false;
-
 static void *current_compat_encoded_id = NULL;
+
+static void compat_plt_register(const char *regex, const char *symbol, void *newFunc, void **oldFunc);
+static void compat_plt_register_v4(dev_t dev, ino_t inode, const char *symbol, void *newFunc, void **oldFunc);
+static void compat_plt_exclude(const char *regex, const char *symbol);
+static void compat_exempt_fd(int fd);
 
 void zygisk_compat_set_current_id(void *id) {
   current_compat_encoded_id = id;
@@ -43,17 +46,18 @@ size_t zygisk_compat_get_count(void) {
 
 void zygisk_compat_reset(void) {
   compat_module_count = 0;
-  compat_unload_requested = false;
   current_compat_encoded_id = NULL;
 }
 
 static bool compat_register_module(struct zygisk_compat_api_table *table, struct zygisk_compat_module_abi *abi) {
+  if (!table || !abi || !current_compat_encoded_id) return false;
+
   if (compat_module_count >= MAX_COMPAT_MODULES) {
     LOGE("Too many Zygisk compat modules");
     return false;
   }
 
-  if (abi->api_version > ZYGISK_COMPAT_API_VERSION) {
+  if (abi->api_version < 1 || abi->api_version > ZYGISK_COMPAT_API_VERSION) {
     LOGE("Zygisk compat module API version %ld too high (max %d)", abi->api_version, ZYGISK_COMPAT_API_VERSION);
     return false;
   }
@@ -61,6 +65,14 @@ static bool compat_register_module(struct zygisk_compat_api_table *table, struct
   compat_modules[compat_module_count].abi = *abi;
   compat_modules[compat_module_count].encoded_id = current_compat_encoded_id;
   table->impl = current_compat_encoded_id ? current_compat_encoded_id : (void *)(uintptr_t)(compat_module_count + 1);
+
+  if (abi->api_version >= 4) {
+    table->pltHookRegister_v4 = compat_plt_register_v4;
+    table->exemptFd = compat_exempt_fd;
+  } else {
+    table->pltHookRegister = compat_plt_register;
+    table->pltHookExclude = compat_plt_exclude;
+  }
 
   LOGD("Zygisk compat module %zu registered, API version %ld", compat_module_count, abi->api_version);
 
@@ -109,7 +121,6 @@ static int compat_connect_companion(void *impl) {
 static void compat_set_option(void *impl, int opt) {
   void *target_id = impl ? impl : current_compat_encoded_id;
   if (opt == ZYGISK_OPTION_DLCLOSE_MODULE_LIBRARY) {
-    compat_unload_requested = true;
     if (cb_set_option && target_id) {
       ((void (*)(void *, int))cb_set_option)(target_id, ZYGISK_OPTION_DLCLOSE_MODULE_LIBRARY);
     }
@@ -214,8 +225,4 @@ void zygisk_compat_call_post_server(const void *args) {
       compat_modules[i].abi.postServerSpecialize(compat_modules[i].abi.module_this, args);
     current_compat_encoded_id = saved_id;
   }
-}
-
-bool zygisk_compat_is_unload_requested(void) {
-  return compat_unload_requested;
 }

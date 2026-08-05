@@ -21,17 +21,22 @@
 bool inject_on_main(int pid, const char *lib_path, uintptr_t libc_init_target, uintptr_t libc_init_got_slot, bool is_tango) {
   LOGI("injecting %s to zygote %d via GOT hook", lib_path, pid);
 
+  bool got_is_patched = false;
+  bool have_backup_regs = false;
+  struct user_regs_struct backup = { 0 };
+
   uintptr_t break_addr = (uintptr_t)((intptr_t)(-0x0F & ~1) | (intptr_t)(libc_init_target & 1));
   if (!ptrace_poke_uintptr(pid, libc_init_got_slot, break_addr)) {
     LOGE("Failed to patch GOT slot with break_addr");
 
     return false;
   }
+  got_is_patched = true;
 
   if (ptrace(PTRACE_CONT, pid, 0, 0) == -1) {
     PLOGE("Failed to continue to GOT break");
 
-    return false;
+    goto restore_tracee;
   }
 
   int status = 0;
@@ -43,25 +48,26 @@ bool inject_on_main(int pid, const char *lib_path, uintptr_t libc_init_target, u
 
     LOGE("expected SIGSEGV on __libc_init GOT call, got: %s", status_str);
 
-    return false;
+    goto restore_tracee;
   }
 
   struct user_regs_struct regs = { 0 };
   if (!get_regs(pid, &regs)) {
     LOGE("Failed to get regs after GOT break");
 
-    return false;
+    goto restore_tracee;
   }
+
+  memcpy(&backup, &regs, sizeof(backup));
+  have_backup_regs = true;
 
   /* Restore valid __libc_init pointer to RELRO GOT slot via PTRACE_POKEDATA fallback */
   if (!ptrace_poke_uintptr(pid, libc_init_got_slot, libc_init_target)) {
     LOGE("Failed to restore __libc_init GOT slot");
 
-    return false;
+    goto restore_tracee;
   }
-
-  struct user_regs_struct backup;
-  memcpy(&backup, &regs, sizeof(regs));
+  got_is_patched = false;
 
   char pid_str[11];
   snprintf(pid_str, sizeof(pid_str), "%d", pid);
@@ -70,7 +76,7 @@ bool inject_on_main(int pid, const char *lib_path, uintptr_t libc_init_target, u
   if (!map) {
     LOGE("Failed to parse remote maps after GOT break");
 
-    return false;
+    goto restore_tracee;
   }
 
   struct maps_info *local_map = parse_maps("self");
@@ -79,7 +85,7 @@ bool inject_on_main(int pid, const char *lib_path, uintptr_t libc_init_target, u
 
     free_maps(map);
 
-    return false;
+    goto restore_tracee;
   }
 
   void *libc_return_addr = find_module_return_addr(map, "libc.so");
@@ -92,7 +98,7 @@ bool inject_on_main(int pid, const char *lib_path, uintptr_t libc_init_target, u
     free_maps(local_map);
     free_maps(map);
 
-    return false;
+    goto restore_tracee;
   }
 
   free_maps(local_map);
@@ -115,18 +121,26 @@ bool inject_on_main(int pid, const char *lib_path, uintptr_t libc_init_target, u
   if (!injector_ok) {
     LOGE("injector entry faulted at %p", (void *)regs.REG_IP);
 
-    backup.REG_IP = (long)libc_init_target;
-    set_regs(pid, &backup);
-
-    return false;
+    goto restore_tracee;
   }
 
   backup.REG_IP = (long)libc_init_target;
-  if (!set_regs(pid, &backup)) return false;
+  if (!set_regs(pid, &backup)) goto restore_tracee;
 
   LOGD("injection complete, instruction pointer reset to __libc_init (%p)", (void *)libc_init_target);
 
   return true;
+
+  restore_tracee:
+    if (got_is_patched && !ptrace_poke_uintptr(pid, libc_init_got_slot, libc_init_target))
+      LOGE("Failed to restore __libc_init GOT slot during injection cleanup");
+
+    if (have_backup_regs) {
+      backup.REG_IP = (long)libc_init_target;
+      if (!set_regs(pid, &backup)) LOGE("Failed to restore zygote registers during injection cleanup");
+    }
+
+    return false;
 }
 
 #define STOPPED_WITH(sig, event) (WIFSTOPPED(status) && WSTOPSIG(status) == (sig) && (status >> 16) == (event))

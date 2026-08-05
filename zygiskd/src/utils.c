@@ -7,6 +7,7 @@
 #include <poll.h>
 #include <sys/mount.h>
 #include <sys/socket.h>
+#include <sys/syscall.h>
 #include <sys/sysmacros.h>
 #include <sys/types.h>
 #include <sys/un.h>
@@ -75,7 +76,7 @@ void set_socket_create_context(const char *restrict context) {
   fail:
     ;
     char path[PATH_MAX];
-    snprintf(path, PATH_MAX, "/proc/self/task/%d/attr/sockcreate", gettid());
+    snprintf(path, PATH_MAX, "/proc/self/task/%ld/attr/sockcreate", (long)syscall(SYS_gettid));
 
     sockcreate = fopen(path, "w");
     if (sockcreate == NULL) {
@@ -87,6 +88,8 @@ void set_socket_create_context(const char *restrict context) {
     if (fwrite(context, 1, strlen(context), sockcreate) != strlen(context)) {
       LOGE("Failed to write to tid sockcreate with %d: %s", errno, strerror(errno));
 
+      fclose(sockcreate);
+
       return;
     }
 
@@ -94,6 +97,8 @@ void set_socket_create_context(const char *restrict context) {
 }
 
 static bool get_current_attr(char *restrict output, size_t size) {
+  if (size == 0) return false;
+
   FILE *current = fopen("/proc/self/attr/current", "r");
   if (current == NULL) {
     LOGE("fopen: %s", strerror(errno));
@@ -101,7 +106,7 @@ static bool get_current_attr(char *restrict output, size_t size) {
     return false;
   }
 
-  size_t ret = fread(output, 1, size, current);
+  size_t ret = fread(output, 1, size - 1, current);
   if (ferror(current)) {
     LOGE("fread: %s", strerror(errno));
 
@@ -290,14 +295,40 @@ int read_fd(int fd) {
   return sendfd;
 }
 
-#define write_func(type)                    \
-  ssize_t write_## type(int fd, type val) { \
-    return write(fd, &val, sizeof(type));   \
+static ssize_t write_full(int fd, const void *buf, size_t len) {
+  size_t written = 0;
+  while (written < len) {
+    ssize_t ret = write(fd, (const char *)buf + written, len - written);
+    if (ret == -1 && errno == EINTR) continue;
+    if (ret <= 0) return ret == 0 ? (ssize_t)written : -1;
+
+    written += (size_t)ret;
   }
 
-#define read_func(type)                     \
-  ssize_t read_## type(int fd, type *val) { \
-    return read(fd, val, sizeof(type));     \
+  return (ssize_t)written;
+}
+
+static ssize_t read_full(int fd, void *buf, size_t len) {
+  size_t read_bytes = 0;
+  while (read_bytes < len) {
+    ssize_t ret = read(fd, (char *)buf + read_bytes, len - read_bytes);
+    if (ret == -1 && errno == EINTR) continue;
+    if (ret <= 0) return ret == 0 ? (ssize_t)read_bytes : -1;
+
+    read_bytes += (size_t)ret;
+  }
+
+  return (ssize_t)read_bytes;
+}
+
+#define write_func(type)                         \
+  ssize_t write_## type(int fd, type val) {      \
+    return write_full(fd, &val, sizeof(type));   \
+  }
+
+#define read_func(type)                          \
+  ssize_t read_## type(int fd, type *val) {      \
+    return read_full(fd, val, sizeof(type));     \
   }
 
 write_func(size_t)
@@ -311,14 +342,14 @@ read_func(uint8_t)
 
 ssize_t write_string(int fd, const char *restrict str) {
   size_t str_len = strlen(str);
-  ssize_t written_bytes = write(fd, &str_len, sizeof(size_t));
+  ssize_t written_bytes = write_full(fd, &str_len, sizeof(str_len));
   if (written_bytes != sizeof(size_t)) {
     LOGE("Failed to write string length: Not all bytes were written (%zd != %zu).", written_bytes, sizeof(size_t));
 
     return -1;
   }
 
-  written_bytes = write(fd, str, str_len);
+  written_bytes = write_full(fd, str, str_len);
   if ((size_t)written_bytes != str_len) {
     LOGE("Failed to write string: Not all bytes were written.");
 
@@ -329,8 +360,10 @@ ssize_t write_string(int fd, const char *restrict str) {
 }
 
 ssize_t read_string(int fd, char *restrict buf, size_t buf_size) {
+  if (buf_size == 0) return -1;
+
   size_t str_len = 0;
-  ssize_t read_bytes = read(fd, &str_len, sizeof(size_t));
+  ssize_t read_bytes = read_full(fd, &str_len, sizeof(str_len));
   if (read_bytes != (ssize_t)sizeof(size_t)) {
     LOGE("Failed to read string length: Not all bytes were read (%zd != %zu).", read_bytes, sizeof(size_t));
 
@@ -343,7 +376,7 @@ ssize_t read_string(int fd, char *restrict buf, size_t buf_size) {
     return -1;
   }
 
-  read_bytes = read(fd, buf, str_len);
+  read_bytes = read_full(fd, buf, str_len);
   if (read_bytes != (ssize_t)str_len) {
     LOGE("Failed to read string: Promised bytes doesn't exist (%zd != %zu).", read_bytes, str_len);
 
@@ -772,7 +805,14 @@ int save_mns_fd(int pid, enum MountNamespaceState mns_state, struct root_impl im
     }
 
     if (mns_state == Clean) {
-      unshare(CLONE_NEWNS);
+      if (unshare(CLONE_NEWNS) == -1) {
+        LOGE("Failed to create clean mount namespace: %s", strerror(errno));
+
+        if (write_uint8_t(socket_child, 0) == -1)
+          LOGE("Failed to write to socket_child: %s", strerror(errno));
+
+        goto finalize_mns_fork;
+      }
 
       if (!umount_root(impl)) {
         LOGE("Failed to umount root");
@@ -793,8 +833,13 @@ int save_mns_fd(int pid, enum MountNamespaceState mns_state, struct root_impl im
     }
 
     uint8_t has_opened = 0;
-    if (read_uint8_t(socket_child, &has_opened) == -1)
+    if (read_uint8_t(socket_child, &has_opened) != (ssize_t)sizeof(has_opened) || !has_opened) {
       LOGE("Failed to read from socket_child: %s", strerror(errno));
+
+      close(socket_child);
+
+      _exit(1);
+    }
 
     close(socket_child);
     /* INFO: Keep process alive to preserve mount namespace so ns_fd remains valid for setns */
