@@ -6,6 +6,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <sys/socket.h>
+#include <sys/time.h>
 #include <sys/wait.h>
 
 #include <linux/limits.h>
@@ -103,6 +104,14 @@ static bool get_module_so_path(const char *name, char *out_path, size_t max_len)
   if (access(out_path, R_OK) == 0) return true;
 
   return false;
+}
+
+static void set_client_timeouts(int fd) {
+  const struct timeval timeout = { .tv_sec = 2, .tv_usec = 0 };
+  if (setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) == -1 ||
+      setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout)) == -1) {
+    LOGW("Failed to configure client socket timeouts: %s", strerror(errno));
+  }
 }
 
 /* WARNING: Dynamic memory based */
@@ -389,6 +398,10 @@ void zygiskd_start(char *restrict argv[]) {
 
       break;
     }
+
+    // Each request is handled by this single loop. A peer that connects but never sends its action
+    // must not stall every later zygote specialization indefinitely.
+    set_client_timeouts(client_fd);
 
     uint8_t action8 = 0;
     ssize_t len = read_uint8_t(client_fd, &action8);
