@@ -15,6 +15,18 @@ jobs:
           submodules: "recursive"
           fetch-depth: 0
 
+      - name: Setup signing keys
+        env:
+          private_key: ${{ secrets.SIGNING_PRIVATE_KEY }}
+          public_key: ${{ secrets.SIGNING_PUBLIC_KEY }}
+        run: |
+          if [ -z "$private_key" ] || [ -z "$public_key" ]; then
+            echo "Signing keys not configured, building without signing"
+          else
+            echo "$private_key" | base64 -d > module/private_key
+            echo "$public_key" | base64 -d > module/public_key
+          fi
+
       - name: Setup NDK
         uses: nttld/setup-ndk@v1
         id: setup_ndk
