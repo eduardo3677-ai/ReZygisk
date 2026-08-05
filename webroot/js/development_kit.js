@@ -76,7 +76,7 @@ export function getDevelopmentExecResponse(command) {
     return developmentResponse['log_lister']
   }
 
-  if (command.includes('/system/bin/rm -f /data/adb/rezygisk/rezygisk.log')) {
+  if (command.includes('/data/adb/rezygisk/rezygisk.log') && command.includes('webui_error.log')) {
     return { errno: 0, stdout: '', stderr: '' }
   }
 

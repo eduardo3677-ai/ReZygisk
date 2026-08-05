@@ -2,6 +2,20 @@ type zygisk_file file_type
 typeattribute zygisk_file mlstrustedobject
 allow zygote zygisk_file sock_file {read write}
 
+type rezygisk_log_file file_type
+typeattribute rezygisk_log_file mlstrustedobject
+# The log is pre-created by post-fs-data.sh, so zygote only needs to append to it.
+allow zygote rezygisk_log_file dir search
+allow zygote rezygisk_log_file file {append getattr open write}
+allow magisk rezygisk_log_file dir search
+allow magisk rezygisk_log_file file {append getattr open read unlink write}
+allow ksu rezygisk_log_file dir search
+allow ksu rezygisk_log_file file {append getattr open read unlink write}
+allow apd rezygisk_log_file dir search
+allow apd rezygisk_log_file file {append getattr open read unlink write}
+allow su rezygisk_log_file dir search
+allow su rezygisk_log_file file {append getattr open read unlink write}
+
 allow zygote magisk lnk_file read
 allow zygote unlabeled file {read open}
 allow zygote zygote capability sys_chroot

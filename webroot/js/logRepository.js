@@ -125,7 +125,7 @@ export function filterLogEntries(entries, query, minimumLevel) {
 }
 
 export async function clearLogFiles() {
-  const result = await exec('/system/bin/rm -f /data/adb/rezygisk/rezygisk.log /data/adb/modules/rezygisk/rezygisk.log /data/adb/rezygisk/webui_error.log')
+  const result = await exec('/system/bin/sh -c \'if [ -f /data/adb/rezygisk/rezygisk.log ]; then : > /data/adb/rezygisk/rezygisk.log; fi; rm -f /data/adb/modules/rezygisk/rezygisk.log /data/adb/rezygisk/webui_error.log\'')
   if (!result || result.errno !== 0) {
     throw new Error((result && result.stderr) || 'Unable to clear the ReZygisk log files.')
   }

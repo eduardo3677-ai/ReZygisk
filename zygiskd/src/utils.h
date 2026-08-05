@@ -23,9 +23,29 @@
 #endif
 
 #include <stdarg.h>
+#include <fcntl.h>
+#include <string.h>
+#include <sys/xattr.h>
 #include <time.h>
 #include <unistd.h>
 #include <sys/syscall.h>
+
+#define REZYGISK_NATIVE_LOG_PATH "/data/adb/rezygisk/rezygisk.log"
+#define REZYGISK_NATIVE_LOG_CONTEXT "u:object_r:rezygisk_log_file:s0"
+
+static inline int rz_native_file_logging_enabled(void) {
+  return access("/data/adb/rezygisk/debug_logging", F_OK) == 0 ||
+         access("/data/adb/modules/rezygisk/debug_logging", F_OK) == 0;
+}
+
+static inline int rz_native_log_is_ready(void) {
+  char context[sizeof(REZYGISK_NATIVE_LOG_CONTEXT)];
+  ssize_t length = lgetxattr(REZYGISK_NATIVE_LOG_PATH, "security.selinux", context, sizeof(context) - 1);
+  if (length <= 0) return 0;
+
+  context[length] = '\0';
+  return strcmp(context, REZYGISK_NATIVE_LOG_CONTEXT) == 0;
+}
 
 static inline void rz_daemon_log_print(int priority, const char *tag, const char *fmt, ...) {
   va_list ap;
@@ -37,39 +57,40 @@ static inline void rz_daemon_log_print(int priority, const char *tag, const char
   vprintf(fmt, ap);
   va_end(ap);
 
-  if (access("/data/adb/rezygisk/debug_logging", F_OK) == 0 ||
-      access("/data/adb/modules/rezygisk/debug_logging", F_OK) == 0 ||
-      access("/data/adb/rezygisk/rezygisk.log", F_OK) == 0) {
-    FILE *f = fopen("/data/adb/rezygisk/rezygisk.log", "a");
-    if (!f) {
-      f = fopen("/data/adb/modules/rezygisk/rezygisk.log", "a");
-    }
-    if (f) {
-      time_t now = time(NULL);
-      struct tm *tm_info = localtime(&now);
-      char time_buf[32];
-      if (tm_info) strftime(time_buf, sizeof(time_buf), "%m-%d %H:%M:%S", tm_info);
-      else time_buf[0] = '\0';
+  if (!rz_native_file_logging_enabled() || !rz_native_log_is_ready()) return;
 
-      const char *prio_str = "D";
-      switch (priority) {
-        case ANDROID_LOG_VERBOSE: prio_str = "V"; break;
-        case ANDROID_LOG_DEBUG:   prio_str = "D"; break;
-        case ANDROID_LOG_INFO:    prio_str = "I"; break;
-        case ANDROID_LOG_WARN:    prio_str = "W"; break;
-        case ANDROID_LOG_ERROR:   prio_str = "E"; break;
-        case ANDROID_LOG_FATAL:   prio_str = "F"; break;
-      }
+  int fd = open(REZYGISK_NATIVE_LOG_PATH, O_WRONLY | O_APPEND | O_CLOEXEC);
+  if (fd == -1) return;
 
-      long tid = (long)syscall(SYS_gettid);
-      fprintf(f, "%s [%d:%ld] %s/%s: ", time_buf, getpid(), tid, prio_str, tag);
-      va_start(ap, fmt);
-      vfprintf(f, fmt, ap);
-      va_end(ap);
-      fprintf(f, "\n");
-      fclose(f);
-    }
+  FILE *f = fdopen(fd, "a");
+  if (!f) {
+    close(fd);
+    return;
   }
+
+  time_t now = time(NULL);
+  struct tm *tm_info = localtime(&now);
+  char time_buf[32];
+  if (tm_info) strftime(time_buf, sizeof(time_buf), "%m-%d %H:%M:%S", tm_info);
+  else time_buf[0] = '\0';
+
+  const char *prio_str = "D";
+  switch (priority) {
+    case ANDROID_LOG_VERBOSE: prio_str = "V"; break;
+    case ANDROID_LOG_DEBUG:   prio_str = "D"; break;
+    case ANDROID_LOG_INFO:    prio_str = "I"; break;
+    case ANDROID_LOG_WARN:    prio_str = "W"; break;
+    case ANDROID_LOG_ERROR:   prio_str = "E"; break;
+    case ANDROID_LOG_FATAL:   prio_str = "F"; break;
+  }
+
+  long tid = (long)syscall(SYS_gettid);
+  fprintf(f, "%s [%d:%ld] %s/%s: ", time_buf, getpid(), tid, prio_str, tag);
+  va_start(ap, fmt);
+  vfprintf(f, fmt, ap);
+  va_end(ap);
+  fprintf(f, "\n");
+  fclose(f);
 }
 
 #define LOGI(...) rz_daemon_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)

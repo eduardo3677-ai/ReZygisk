@@ -33,6 +33,12 @@ mkdir -p "$TMP_PATH"
 # Clean up temporary sockets and runtime state, preserving config.json and logs
 rm -f "$TMP_PATH"/*.sock "$TMP_PATH"/init_monitor "$TMP_PATH"/state.json "$TMP_PATH"/webui_error.log 2>/dev/null || true
 
+# Pre-create and label the native log before locking down the runtime directory.
+# Native processes open it without O_CREAT, so zygote never needs directory write access.
+touch "$TMP_PATH/rezygisk.log"
+chmod 600 "$TMP_PATH/rezygisk.log"
+chcon u:object_r:rezygisk_log_file:s0 "$TMP_PATH/rezygisk.log" 2>/dev/null || true
+
 create_sys_perm "$TMP_PATH"
 
 sh /data/adb/post-fs-data.d/rezygisk.sh || true

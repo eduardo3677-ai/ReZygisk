@@ -74,7 +74,7 @@ export async function savePersistentConfig(partialConfig) {
     if (cachedConfig.debugLogging) {
       await exec(`/system/bin/mkdir -p /data/adb/rezygisk && /system/bin/touch ${DEBUG_FLAG_REZYGISK} ${DEBUG_FLAG_MODULE} 2>/dev/null || true`).catch(() => {})
     } else {
-      await exec(`/system/bin/rm -f ${DEBUG_FLAG_REZYGISK} ${DEBUG_FLAG_MODULE} ${LOG_FILE} ${LOG_FILE_FALLBACK} ${ERROR_LOG} 2>/dev/null || true`).catch(() => {})
+      await exec(`/system/bin/rm -f ${DEBUG_FLAG_REZYGISK} ${DEBUG_FLAG_MODULE} ${LOG_FILE_FALLBACK} ${ERROR_LOG} 2>/dev/null; if [ -f ${LOG_FILE} ]; then : > ${LOG_FILE}; fi`).catch(() => {})
     }
   }
 

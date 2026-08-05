@@ -27,7 +27,7 @@ if [ "$(which magisk)" ]; then
 fi
 
 # Initialize native log header if debug logging is enabled
-if [ -f /data/adb/rezygisk/debug_logging ] || [ -f "$MODDIR/debug_logging" ] || grep -q '"debugLogging": true' /data/adb/rezygisk/config.json 2>/dev/null; then
+if { [ -f /data/adb/rezygisk/debug_logging ] || [ -f "$MODDIR/debug_logging" ] || grep -q '"debugLogging": true' /data/adb/rezygisk/config.json 2>/dev/null; } && [ -f /data/adb/rezygisk/rezygisk.log ]; then
   echo "=== ReZygisk Native Logging Started $(date) ===" >> /data/adb/rezygisk/rezygisk.log 2>/dev/null
 fi
 
