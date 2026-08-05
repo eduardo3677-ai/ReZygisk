@@ -49,15 +49,19 @@ static long remote_mmap_offset_arg(off_t file_offset, size_t page_size) {
 
 static bool remote_mmap_succeeded(long result) {
   /* A 32-bit mapping above 2 GiB is negative as a long. Linux syscall errors
-     are restricted to the inclusive range [-4095, -1]. */
+      are restricted to the inclusive range [-4095, -1]. */
   return result != 0 && !(result < 0 && result >= -4095);
+}
+
+static bool read_exact_at(int fd, void *buf, size_t count, off_t offset) {
+  return read_loop_offset(fd, buf, count, offset) == (ssize_t)count;
 }
 
 /* INFO: Parse ELF headers and compute the total mapping size for PT_LOAD segments. */
 static bool compute_load_layout(int fd, size_t page_size, ElfW(Ehdr) *eh,
                                 ElfW(Phdr) **out_phdr, ElfW(Addr) *out_min_vaddr,
                                 size_t *out_map_size) {
-  if (!read_loop_offset(fd, eh, sizeof(*eh), 0)) {
+  if (!read_exact_at(fd, eh, sizeof(*eh), 0)) {
     LOGE("Failed to read ELF header");
 
     return false;
@@ -77,7 +81,7 @@ static bool compute_load_layout(int fd, size_t page_size, ElfW(Ehdr) *eh,
     return false;
   }
 
-  if (!read_loop_offset(fd, phdr, phdr_sz, (off_t)eh->e_phoff)) {
+  if (!read_exact_at(fd, phdr, phdr_sz, (off_t)eh->e_phoff)) {
     LOGE("Failed to read program headers");
 
     free(phdr);
@@ -221,7 +225,7 @@ static bool elf_load_dyn_info(int fd, const ElfW(Ehdr) *eh, const ElfW(Phdr) *ph
     return false;
   }
 
-  if (!read_loop_offset(fd, dyn, dyn_count * sizeof(ElfW(Dyn)), out->dyn_off)) {
+  if (!read_exact_at(fd, dyn, dyn_count * sizeof(ElfW(Dyn)), out->dyn_off)) {
     LOGE("Failed to read dynamic entries");
 
     goto cleanup;
@@ -333,7 +337,7 @@ static bool elf_load_dyn_info(int fd, const ElfW(Ehdr) *eh, const ElfW(Phdr) *ph
     goto cleanup;
   }
 
-  if (!read_loop_offset(fd, out->strtab, strsz, out->strtab_off)) {
+  if (!read_exact_at(fd, out->strtab, strsz, out->strtab_off)) {
     LOGE("Failed to read string table");
 
     free(out->strtab);
@@ -356,7 +360,7 @@ static bool elf_load_dyn_info(int fd, const ElfW(Ehdr) *eh, const ElfW(Phdr) *ph
     if (vaddr_to_offset(phdr, eh->e_phnum, gnu_hash_vaddr, &gnu_hash_off)) {
       uint32_t header[4];
 
-      if (read_loop_offset(fd, header, sizeof(header), gnu_hash_off)) {
+      if (read_exact_at(fd, header, sizeof(header), gnu_hash_off)) {
         uint32_t nbuckets = header[0];
         uint32_t symoffset = header[1];
         uint32_t bloom_size = header[2];
@@ -371,7 +375,7 @@ static bool elf_load_dyn_info(int fd, const ElfW(Ehdr) *eh, const ElfW(Phdr) *ph
         for (uint32_t b = 0; b < nbuckets; b++) {
           uint32_t bucket_val;
 
-          if (!read_loop_offset(fd, &bucket_val, sizeof(bucket_val), buckets_off + (off_t)(b * 4)))
+          if (!read_exact_at(fd, &bucket_val, sizeof(bucket_val), buckets_off + (off_t)(b * 4)))
             break;
 
           if (bucket_val > max_bucket) max_bucket = bucket_val;
@@ -383,7 +387,7 @@ static bool elf_load_dyn_info(int fd, const ElfW(Ehdr) *eh, const ElfW(Phdr) *ph
           uint32_t chain_idx = max_bucket - symoffset;
           uint32_t chain_val;
 
-          while (read_loop_offset(fd, &chain_val, sizeof(chain_val), chains_off + (off_t)(chain_idx * 4))) {
+          while (read_exact_at(fd, &chain_val, sizeof(chain_val), chains_off + (off_t)(chain_idx * 4))) {
             if (chain_val & 1) {
               out->nsyms = max_bucket + 1;
 
@@ -415,7 +419,7 @@ cleanup:
 static bool find_dynsym_value(int fd, const struct elf_dyn_info *info, const char *sym_name, ElfW(Addr) *out_value) {
   for (size_t i = 0; i < info->nsyms; i++) {
     ElfW(Sym) sym;
-    if (!read_loop_offset(fd, &sym, sizeof(sym), info->symtab_off + (off_t)(i * info->syment)))
+    if (!read_exact_at(fd, &sym, sizeof(sym), info->symtab_off + (off_t)(i * info->syment)))
       break;
 
     if (sym.st_name == 0 || sym.st_name >= info->strsz) continue;
@@ -448,7 +452,7 @@ static bool resolve_symbol_addr(int fd, const struct elf_dyn_info *info,
                                 size_t sym_idx, uintptr_t *out_addr) {
   ElfW(Sym) sym;
 
-  if (!read_loop_offset(fd, &sym, sizeof(sym), info->symtab_off + (off_t)(sym_idx * info->syment)))
+  if (!read_exact_at(fd, &sym, sizeof(sym), info->symtab_off + (off_t)(sym_idx * info->syment)))
     return false;
 
   /* INFO: Defined symbol - use load_bias + value */
@@ -533,7 +537,7 @@ static bool apply_rela_section(int pid, int fd, const struct elf_dyn_info *info,
 
   for (size_t i = 0; i < count; i++) {
     ElfW(Rela) r;
-    if (!read_loop_offset(fd, &r, sizeof(r), rela_off + (off_t)(i * sizeof(r)))) return false;
+    if (!read_exact_at(fd, &r, sizeof(r), rela_off + (off_t)(i * sizeof(r)))) return false;
 
     unsigned type = (unsigned)ELF_R_TYPE(r.r_info);
     unsigned sym = (unsigned)ELF_R_SYM(r.r_info);
@@ -593,7 +597,7 @@ static bool apply_rel_section(int pid, int fd, const struct elf_dyn_info *info,
 
   for (size_t i = 0; i < count; i++) {
     ElfW(Rel) r;
-    if (!read_loop_offset(fd, &r, sizeof(r), rel_off + (off_t)(i * sizeof(r)))) return false;
+    if (!read_exact_at(fd, &r, sizeof(r), rel_off + (off_t)(i * sizeof(r)))) return false;
 
     unsigned type = (unsigned)ELF_R_TYPE(r.r_info);
     unsigned sym = (unsigned)ELF_R_SYM(r.r_info);

@@ -5,6 +5,7 @@
 
 #include <fcntl.h>
 #include <poll.h>
+#include <signal.h>
 #include <sys/mount.h>
 #include <sys/socket.h>
 #include <sys/syscall.h>
@@ -388,8 +389,30 @@ ssize_t read_string(int fd, char *restrict buf, size_t buf_size) {
   return read_bytes;
 }
 
+static bool wait_for_child(pid_t pid, int *status) {
+  for (int elapsed_ms = 0; elapsed_ms < 2000; elapsed_ms += 10) {
+    pid_t result = waitpid(pid, status, WNOHANG);
+    if (result == pid) return WIFEXITED(*status) && WEXITSTATUS(*status) == 0;
+    if (result == -1 && errno != EINTR) return false;
+
+    usleep(10000);
+  }
+
+  kill(pid, SIGKILL);
+  while (waitpid(pid, status, 0) == -1 && errno == EINTR) {}
+  errno = ETIMEDOUT;
+
+  return false;
+}
+
 /* INFO: Cannot use restrict here as execv does not have restrict */
 bool exec_command(char *restrict buf, size_t len, const char *restrict file, const char *const argv[]) {
+  if (len == 0) {
+    errno = EINVAL;
+
+    return false;
+  }
+
   int link[2];
   pid_t pid;
 
@@ -423,17 +446,43 @@ bool exec_command(char *restrict buf, size_t len, const char *restrict file, con
   } else {
     close(link[1]);
 
-    ssize_t nbytes = read(link[0], buf, len);
-    if (nbytes > 0) buf[nbytes - 1] = '\0';
-    /* INFO: If something went wrong, at least we must ensure it is NULL-terminated */
-    else buf[0] = '\0';
+    struct pollfd pfd = { .fd = link[0], .events = POLLIN };
+    int ready;
+    do {
+      ready = poll(&pfd, 1, 2000);
+    } while (ready == -1 && errno == EINTR);
 
-    wait(NULL);
+    if (ready <= 0) {
+      if (ready == 0) errno = ETIMEDOUT;
+      kill(pid, SIGKILL);
+      while (waitpid(pid, NULL, 0) == -1 && errno == EINTR) {}
+      close(link[0]);
+      buf[0] = '\0';
+
+      return false;
+    }
+
+    ssize_t nbytes;
+    do {
+      nbytes = read(link[0], buf, len - 1);
+    } while (nbytes == -1 && errno == EINTR);
+
+    if (nbytes > 0) {
+      buf[nbytes] = '\0';
+      if (buf[nbytes - 1] == '\n') buf[nbytes - 1] = '\0';
+    } else {
+      buf[0] = '\0';
+    }
+
+    int status = 0;
+    bool exited = wait_for_child(pid, &status);
 
     close(link[0]);
+
+    return nbytes >= 0 && exited;
   }
 
-  return true;
+  return false;
 }
 
 bool check_unix_socket(int fd, bool block) {

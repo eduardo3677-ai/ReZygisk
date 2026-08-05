@@ -135,6 +135,17 @@ static void load_modules(struct Context *restrict context) {
       LOGE("Failed to strdup for the module \"%s\": %s", name, strerror(errno));
 
       close(lib_fd);
+
+      for (size_t i = 0; i < context->len; i++) {
+        free(context->modules[i].name);
+        if (context->modules[i].companion >= 0) close(context->modules[i].companion);
+        if (context->modules[i].lib_fd >= 0) close(context->modules[i].lib_fd);
+      }
+
+      free(context->modules);
+      context->modules = NULL;
+      context->len = 0;
+
       closedir(dir);
 
       return;
@@ -166,7 +177,7 @@ static int create_daemon_socket(void) {
 
 static int spawn_companion(char *restrict argv[], char *restrict name, int lib_fd) {
   int sockets[2];
-  if (socketpair(AF_UNIX, SOCK_STREAM, 0, sockets) == -1) {
+  if (socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0, sockets) == -1) {
     LOGE("Failed creating socket pair.");
 
     return -1;
@@ -174,6 +185,8 @@ static int spawn_companion(char *restrict argv[], char *restrict name, int lib_f
 
   int daemon_fd = sockets[0];
   int companion_fd = sockets[1];
+  set_client_timeouts(daemon_fd);
+  set_client_timeouts(companion_fd);
 
   pid_t pid = fork();
   if (pid < 0) {
@@ -189,7 +202,14 @@ static int spawn_companion(char *restrict argv[], char *restrict name, int lib_f
     close(companion_fd);
 
     int status = 0;
-    waitpid(pid, &status, 0);
+    while (waitpid(pid, &status, 0) == -1) {
+      if (errno == EINTR) continue;
+
+      LOGE("Failed waiting for companion launcher: %s", strerror(errno));
+      close(daemon_fd);
+
+      return -1;
+    }
 
     if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
       LOGE("Exited with status %d", status);
@@ -344,13 +364,9 @@ void zygiskd_start(char *restrict argv[]) {
   struct sigaction sa = { .sa_handler = SIG_IGN };
   sigaction(SIGPIPE, &sa, NULL);
 
-  for (size_t i = 0; i < PROCESS_CACHE_SIZE; i++) {
-    process_cache[i].valid = false;
-  }
-
   bool first_process = true;
   while (1) {
-    int client_fd = accept(socket_fd, NULL, NULL);
+    int client_fd = accept4(socket_fd, NULL, NULL, SOCK_CLOEXEC);
     if (client_fd == -1) {
       if (errno == EINTR || errno == EAGAIN || errno == ECONNABORTED) continue;
       LOGE("accept: %s", strerror(errno));
@@ -604,7 +620,7 @@ void zygiskd_start(char *restrict argv[]) {
         char module_dir[PATH_MAX];
         snprintf(module_dir, PATH_MAX, "%s/%s", PATH_MODULES_DIR, context.modules[index].name);
 
-        int fd = open(module_dir, O_RDONLY);
+        int fd = open(module_dir, O_RDONLY | O_DIRECTORY | O_CLOEXEC);
         if (fd == -1) {
           LOGE("Failed opening module directory \"%s\": %s", module_dir, strerror(errno));
 

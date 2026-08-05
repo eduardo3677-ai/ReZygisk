@@ -64,6 +64,12 @@ int main(int argc, char **argv) {
     struct rezygisk_info info;
     rezygiskd_get_info(&info);
 
+    if (!info.running) {
+      fprintf(stderr, "ReZygisk daemon is unavailable\n");
+
+      return 1;
+    }
+
     printf("Daemon process PID: %d\n", info.pid);
 
     switch (info.root_impl) {

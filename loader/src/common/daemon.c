@@ -101,45 +101,38 @@ uint32_t rezygiskd_get_process_flags(uid_t uid, const char *const process) {
 }
 
 void rezygiskd_get_info(struct rezygisk_info *info) {
-  int fd = rezygiskd_connect(1);
-  if (fd == -1) {
-    info->running = false;
+  if (info == NULL) return;
+  *info = (struct rezygisk_info){ 0 };
 
-    return;
-  }
+  int fd = rezygiskd_connect(1);
+  if (fd == -1) return;
 
   info->running = true;
 
-  safe_write(write_uint8_t(fd, (uint8_t)GetInfo), "GetInfo action", return);
+  if (write_uint8_t(fd, (uint8_t)GetInfo) == -1) goto info_failure;
 
   uint32_t flags = 0;
-  safe_read(read_uint32_t(fd, &flags), "info flags", return);
+  if (read_uint32_t(fd, &flags) == -1) goto info_failure;
 
   if (flags & (1 << 28)) info->root_impl = ROOT_IMPL_APATCH;
   else if (flags & (1 << 29)) info->root_impl = ROOT_IMPL_KERNELSU;
   else if (flags & (1 << 30)) info->root_impl = ROOT_IMPL_MAGISK;
   else info->root_impl = ROOT_IMPL_NONE;
 
-  safe_read(read_uint32_t(fd, (uint32_t *)&info->pid), "pid", return);
+  if (read_uint32_t(fd, (uint32_t *)&info->pid) == -1) goto info_failure;
 
-  safe_read(read_size_t(fd, &info->modules.modules_count), "modules count", return);
+  if (read_size_t(fd, &info->modules.modules_count) == -1) goto info_failure;
   if (info->modules.modules_count == 0) {
-    info->modules.modules = NULL;
-
     close(fd);
 
     return;
   }
 
-  info->modules.modules = (char **)malloc(sizeof(char *) * info->modules.modules_count);
+  info->modules.modules = (char **)calloc(info->modules.modules_count, sizeof(char *));
   if (!info->modules.modules) {
     PLOGE("allocating modules name memory");
 
-    info->modules.modules_count = 0;
-
-    close(fd);
-
-    return;
+    goto info_failure;
   }
 
   for (size_t i = 0; i < info->modules.modules_count; i++) {
@@ -204,16 +197,24 @@ void rezygiskd_get_info(struct rezygisk_info *info) {
     info_cleanup:
       info->modules.modules_count = i;
       free_rezygisk_info(info);
-
-      break;
+      goto info_failure;
   }
 
   close(fd);
+
+  return;
+
+  info_failure:
+    info->running = false;
+    free_rezygisk_info(info);
+    close(fd);
 }
 
 void free_rezygisk_info(struct rezygisk_info *info) {
-  for (size_t i = 0; i < info->modules.modules_count; i++) {
-    free(info->modules.modules[i]);
+  if (info->modules.modules != NULL) {
+    for (size_t i = 0; i < info->modules.modules_count; i++) {
+      free(info->modules.modules[i]);
+    }
   }
 
   free(info->modules.modules);

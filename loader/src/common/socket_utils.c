@@ -16,13 +16,11 @@ ssize_t write_loop(int fd, const void *buf, size_t count) {
   while (written < count) {
     ssize_t ret = TEMP_FAILURE_RETRY(write(fd, (const char *)buf + written, count - written));
     if (ret == -1) {
-      if (errno == EAGAIN) {
-        LOGW("Got EAGAIN while writing to fd %d, retrying...\n", fd);
+      if (errno == EAGAIN || errno == EWOULDBLOCK) {
+        errno = ETIMEDOUT;
+        PLOGE("write timed out");
 
-        /* INFO: Sleep for 1ms*/
-        usleep(1000);
-
-        continue;
+        return -1;
       }
 
       PLOGE("write");
@@ -30,7 +28,11 @@ ssize_t write_loop(int fd, const void *buf, size_t count) {
       return -1;
     }
 
-    if (ret == 0) return written;
+    if (ret == 0) {
+      errno = ECONNRESET;
+
+      return -1;
+    }
 
     written += ret;
   }
@@ -45,13 +47,11 @@ ssize_t read_loop_offset(int fd, void *buf, size_t count, off_t offset) {
     if (offset == 0) ret = TEMP_FAILURE_RETRY(read(fd, (char *)buf + read_bytes, count - read_bytes));
     else ret = TEMP_FAILURE_RETRY(pread(fd, (char *)buf + read_bytes, count - read_bytes, offset + read_bytes));
     if (ret == -1) {
-      if (errno == EAGAIN) {
-        LOGW("Got EAGAIN while reading from fd %d, retrying...\n", fd);
+      if (errno == EAGAIN || errno == EWOULDBLOCK) {
+        errno = ETIMEDOUT;
+        PLOGE("read timed out");
 
-        /* INFO: Sleep for 1ms*/
-        usleep(1000);
-
-        continue;
+        return -1;
       }
 
       PLOGE("read");
@@ -59,7 +59,11 @@ ssize_t read_loop_offset(int fd, void *buf, size_t count, off_t offset) {
       return -1;
     }
 
-    if (ret == 0) return read_bytes;
+    if (ret == 0) {
+      errno = ECONNRESET;
+
+      return -1;
+    }
 
     read_bytes += ret;
   }
