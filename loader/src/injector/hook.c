@@ -1035,6 +1035,7 @@ static bool load_modules_only(void) {
 
       zygisk_modules[zygisk_module_length].zygisk_module_entry = NULL;
       zygisk_modules[zygisk_module_length].is_compat = true;
+      zygisk_modules[zygisk_module_length].unload = zygisk_compat_is_unload_requested();
     } else {
       LOGD("Module [%s] uses ReZygisk native ABI", lib_path);
 
@@ -1042,11 +1043,11 @@ static bool load_modules_only(void) {
       zygisk_modules[zygisk_module_length].api.impl = ENCODE_ID((void *)zygisk_module_length);
       zygisk_modules[zygisk_module_length].zygisk_module_entry = (void (*)(void *, void *))entry;
       zygisk_modules[zygisk_module_length].is_compat = false;
+      zygisk_modules[zygisk_module_length].unload = false;
     }
 
     LOGD("Loaded module [%s]. Entry: %p", lib_path, entry);
 
-    zygisk_modules[zygisk_module_length].unload = false;
     zygisk_module_length++;
   }
 
@@ -1096,7 +1097,24 @@ static void rz_run_modules_post(struct zygisk_context *ctx) {
 
   if (zygisk_compat_get_count() > 0) {
     if (FLAG_GET(ctx, APP_SPECIALIZE)) {
-      zygisk_compat_call_post_app(ctx->args.app);
+      struct zygisk_compat_app_specialize_args cargs = {
+        .uid = ctx->args.app->uid,
+        .gid = ctx->args.app->gid,
+        .gids = ctx->args.app->gids,
+        .runtime_flags = ctx->args.app->runtime_flags,
+        .mount_external = ctx->args.app->mount_external,
+        .se_info = ctx->args.app->se_info,
+        .nice_name = ctx->args.app->nice_name,
+        .instruction_set = ctx->args.app->instruction_set,
+        .app_data_dir = ctx->args.app->app_data_dir,
+        .is_child_zygote = ctx->args.app->is_child_zygote,
+        .is_top_app = ctx->args.app->is_top_app,
+        .pkg_data_info_list = ctx->args.app->pkg_data_info_list,
+        .whitelisted_data_info_list = ctx->args.app->whitelisted_data_info_list,
+        .mount_data_dirs = ctx->args.app->mount_data_dirs,
+        .mount_storage_dirs = ctx->args.app->mount_storage_dirs,
+      };
+      zygisk_compat_call_post_app(&cargs);
     } else if (FLAG_GET(ctx, SERVER_FORK_AND_SPECIALIZE)) {
       zygisk_compat_call_post_server(ctx->args.server);
     }

@@ -8,7 +8,12 @@
 
 #define MAX_COMPAT_MODULES 32
 
-static struct zygisk_compat_module_abi compat_modules[MAX_COMPAT_MODULES];
+struct zygisk_compat_module_entry_info {
+  struct zygisk_compat_module_abi abi;
+  void *encoded_id;
+};
+
+static struct zygisk_compat_module_entry_info compat_modules[MAX_COMPAT_MODULES];
 static size_t compat_module_count = 0;
 
 static struct zygisk_compat_api_table compat_api_table;
@@ -51,7 +56,8 @@ static bool compat_register_module(struct zygisk_compat_api_table *table, struct
     return false;
   }
 
-  compat_modules[compat_module_count] = *abi;
+  compat_modules[compat_module_count].abi = *abi;
+  compat_modules[compat_module_count].encoded_id = current_compat_encoded_id;
   table->impl = current_compat_encoded_id ? current_compat_encoded_id : (void *)(uintptr_t)(compat_module_count + 1);
 
   LOGD("Zygisk compat module %zu registered, API version %ld", compat_module_count, abi->api_version);
@@ -92,8 +98,13 @@ static void compat_set_option(void *impl, int opt) {
   void *target_id = impl ? impl : current_compat_encoded_id;
   if (opt == ZYGISK_OPTION_DLCLOSE_MODULE_LIBRARY) {
     compat_unload_requested = true;
-  } else if (opt == ZYGISK_OPTION_FORCE_DENYLIST_UNMOUNT && cb_set_option) {
-    ((void (*)(void *, int))cb_set_option)(target_id, opt);
+    if (cb_set_option && target_id) {
+      ((void (*)(void *, int))cb_set_option)(target_id, ZYGISK_OPTION_DLCLOSE_MODULE_LIBRARY);
+    }
+  } else if (opt == ZYGISK_OPTION_FORCE_DENYLIST_UNMOUNT) {
+    if (cb_set_option && target_id) {
+      ((void (*)(void *, int))cb_set_option)(target_id, ZYGISK_OPTION_FORCE_DENYLIST_UNMOUNT);
+    }
   }
 }
 
@@ -150,29 +161,41 @@ size_t zygisk_compat_call_entry(void *entry, JNIEnv *env) {
 
 void zygisk_compat_call_pre_app(void *args) {
   for (size_t i = 0; i < compat_module_count; i++) {
-    if (compat_modules[i].preAppSpecialize)
-      compat_modules[i].preAppSpecialize(compat_modules[i].module_this, args);
+    void *saved_id = current_compat_encoded_id;
+    if (compat_modules[i].encoded_id) current_compat_encoded_id = compat_modules[i].encoded_id;
+    if (compat_modules[i].abi.preAppSpecialize)
+      compat_modules[i].abi.preAppSpecialize(compat_modules[i].abi.module_this, args);
+    current_compat_encoded_id = saved_id;
   }
 }
 
 void zygisk_compat_call_post_app(const void *args) {
   for (size_t i = 0; i < compat_module_count; i++) {
-    if (compat_modules[i].postAppSpecialize)
-      compat_modules[i].postAppSpecialize(compat_modules[i].module_this, args);
+    void *saved_id = current_compat_encoded_id;
+    if (compat_modules[i].encoded_id) current_compat_encoded_id = compat_modules[i].encoded_id;
+    if (compat_modules[i].abi.postAppSpecialize)
+      compat_modules[i].abi.postAppSpecialize(compat_modules[i].abi.module_this, args);
+    current_compat_encoded_id = saved_id;
   }
 }
 
 void zygisk_compat_call_pre_server(void *args) {
   for (size_t i = 0; i < compat_module_count; i++) {
-    if (compat_modules[i].preServerSpecialize)
-      compat_modules[i].preServerSpecialize(compat_modules[i].module_this, args);
+    void *saved_id = current_compat_encoded_id;
+    if (compat_modules[i].encoded_id) current_compat_encoded_id = compat_modules[i].encoded_id;
+    if (compat_modules[i].abi.preServerSpecialize)
+      compat_modules[i].abi.preServerSpecialize(compat_modules[i].abi.module_this, args);
+    current_compat_encoded_id = saved_id;
   }
 }
 
 void zygisk_compat_call_post_server(const void *args) {
   for (size_t i = 0; i < compat_module_count; i++) {
-    if (compat_modules[i].postServerSpecialize)
-      compat_modules[i].postServerSpecialize(compat_modules[i].module_this, args);
+    void *saved_id = current_compat_encoded_id;
+    if (compat_modules[i].encoded_id) current_compat_encoded_id = compat_modules[i].encoded_id;
+    if (compat_modules[i].abi.postServerSpecialize)
+      compat_modules[i].abi.postServerSpecialize(compat_modules[i].abi.module_this, args);
+    current_compat_encoded_id = saved_id;
   }
 }
 
