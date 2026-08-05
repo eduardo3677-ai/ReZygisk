@@ -41,7 +41,7 @@ async function _updateDynamicElement() {
   const all_modules = []
   const strings = await getStrings(whichCurrentPage())
 
-  if (ReZygiskState.rezygiskd) Object.keys(ReZygiskState.rezygiskd).forEach((daemon_bit) => {
+  if (ReZygiskState && ReZygiskState.rezygiskd) Object.keys(ReZygiskState.rezygiskd).forEach((daemon_bit) => {
     const daemon = ReZygiskState.rezygiskd[daemon_bit]
 
     if (daemon.modules && daemon.modules.length > 0) {

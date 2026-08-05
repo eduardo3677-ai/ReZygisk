@@ -101,7 +101,7 @@ async function _updateDynamicElement(firstRun, ReZygiskState, strings) {
     rzState.expectedWorking = ReZygiskState.zygote === undefined ? 0 : (ReZygiskState.zygote['64'] !== undefined ? 1 : 0) + (ReZygiskState.zygote['32'] !== undefined ? 1 : 0)
   }
 
-  if (ReZygiskState.zygote['64'] && ReZygiskState.zygote !== undefined) {
+  if (ReZygiskState.zygote && ReZygiskState.zygote['64'] !== undefined) {
     const zygote64 = ReZygiskState.zygote['64']
 
     zygote_divs[0].style.display = 'block'
