@@ -116,8 +116,11 @@ $(ZIP_FILE): $(MODULE_DONE)
 	@mkdir -p $(ZIP_DIR)
 	@rm -f $@
 
-	@echo "Creating ZIP file..."
-	@cd $(MODULE_OUT) && zip -r9 $@ . -x '*.DS_Store' > /dev/null
+	@cd $(MODULE_OUT) && if command -v zip >/dev/null 2>&1; then \
+		zip -r9 $@ . -x '*.DS_Store' > /dev/null; \
+	else \
+		python3 -c "import zipfile, os, sys; z = zipfile.ZipFile(sys.argv[1], 'w', zipfile.ZIP_DEFLATED); [z.write(os.path.join(r, f), os.path.relpath(os.path.join(r, f), '.')) for r, d, fs in os.walk('.') for f in fs if not f.endswith('.DS_Store')]; z.close()" $@; \
+	fi
 
 installKsu: build
 	$(ADB_CMD)su -c '/data/adb/ksu/bin/ksud module install $(INSTALL_PATH)'

@@ -14,7 +14,10 @@ import struct
 import hashlib
 from pathlib import Path
 
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+try:
+  from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+except ImportError:
+  Ed25519PrivateKey = None
 
 def file_sign_data(name: str, filepath: str) -> bytes:
   """
