@@ -303,7 +303,6 @@ static void unhook_functions(void);
 */
 DCL_HOOK_FUNC(int, pthread_attr_setstacksize, void *target, size_t size) {
   int res = old_pthread_attr_setstacksize((pthread_attr_t *)target, size);
-  LOGV("Call pthread_attr_setstacksize in [tid, pid]: %d, %d", gettid(), getpid());
 
   if (!enable_unloader) return res;
 
