@@ -26,4 +26,13 @@ if [ "$(which magisk)" ]; then
   done
 fi
 
+# Background log collector if debug logging is enabled
+if [ -f /data/adb/rezygisk/debug_logging ] || [ -f "$MODDIR/debug_logging" ] || grep -q '"debugLogging": true' /data/adb/rezygisk/config.json 2>/dev/null; then
+  log -p i -t "rezygisk-log" "Starting background log collector"
+  (
+    echo "=== ReZygisk Boot Log $(date) ===" >> /data/adb/rezygisk/rezygisk.log 2>/dev/null
+    logcat -v time 2>/dev/null | grep -iE "zygisk|rezygisk|pmpatch|luckypatcher|lsposed|apatch|apd|ksu" >> /data/adb/rezygisk/rezygisk.log 2>/dev/null
+  ) &
+fi
+
 exit 0

@@ -619,8 +619,11 @@ export function getStrings(pageId, forceDefault = false) {
     })
 }
 
+import { savePersistentConfig } from '../configManager.js'
+
 export function setLanguage(langId) {
   localStorage.setItem(`/${moduleName}/language`, langId)
+  savePersistentConfig({ language: langId })
 
   sufferedUpdate.length = 0
 }

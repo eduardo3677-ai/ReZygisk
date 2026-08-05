@@ -1,6 +1,7 @@
 import { setAmoled } from './amoled.js'
 import { setDark } from './dark.js'
 import { setLight } from './light.js'
+import { savePersistentConfig } from '../configManager.js'
 
 // INFO: requirement variables
 export const themeList = {
@@ -16,5 +17,6 @@ export const themeList = {
 
 export const setThemeData = (mode) => {
   localStorage.setItem('/ReZygisk/theme', mode)
+  savePersistentConfig({ theme: mode })
   return mode
 }
