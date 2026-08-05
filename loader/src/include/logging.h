@@ -7,6 +7,7 @@
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
+#include <sys/syscall.h>
 
 #include <android/log.h>
 
@@ -23,7 +24,8 @@ static inline void rz_log_print(int priority, const char *tag, const char *fmt, 
   va_end(ap);
 
   if (access("/data/adb/rezygisk/debug_logging", F_OK) == 0 ||
-      access("/data/adb/modules/rezygisk/debug_logging", F_OK) == 0) {
+      access("/data/adb/modules/rezygisk/debug_logging", F_OK) == 0 ||
+      access("/data/adb/rezygisk/rezygisk.log", F_OK) == 0) {
     FILE *f = fopen("/data/adb/rezygisk/rezygisk.log", "a");
     if (!f) {
       f = fopen("/data/adb/modules/rezygisk/rezygisk.log", "a");
@@ -45,7 +47,8 @@ static inline void rz_log_print(int priority, const char *tag, const char *fmt, 
         case ANDROID_LOG_FATAL:   prio_str = "F"; break;
       }
 
-      fprintf(f, "%s %s/%s: ", time_buf, prio_str, tag);
+      long tid = (long)syscall(SYS_gettid);
+      fprintf(f, "%s [%d:%ld] %s/%s: ", time_buf, getpid(), tid, prio_str, tag);
       va_start(ap, fmt);
       vfprintf(f, fmt, ap);
       va_end(ap);

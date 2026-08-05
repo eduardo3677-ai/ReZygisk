@@ -77,14 +77,26 @@
       <div class="dimc" style="font-size: 1.1em; font-weight: bold;">Log Viewer</div>
       <div class="dimc desc" style="font-size: 0.9em; margin-top: 2px;">View & Manage ReZygisk system logs</div>
     </div>
-    
-    <div class="dimc" style="margin-top: 10px; display: flex; gap: 8px;">
-      <div id="rz_log_refresh_btn" class="button center" style="padding: 6px 12px; font-size: 0.85em; cursor: pointer;">Refresh</div>
-      <div id="rz_log_clear_btn" class="button center" style="padding: 6px 12px; font-size: 0.85em; cursor: pointer;">Clear Log</div>
+
+    <div class="dimc" style="margin-top: 10px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center;">
+      <select id="rz_log_level_select" style="background: rgba(0,0,0,0.3); color: #fff; border: 1px solid rgba(255,255,255,0.2); border-radius: 6px; padding: 5px 8px; font-size: 0.85em;">
+        <option value="ALL">All Levels</option>
+        <option value="E">Errors Only (E/F)</option>
+        <option value="W">Warnings & Errors (W/E)</option>
+        <option value="I">Info & Above (I/W/E)</option>
+        <option value="D">Debug & Above (D/I/W/E)</option>
+      </select>
+
+      <input id="rz_log_search_input" type="text" placeholder="Filter logs..." style="background: rgba(0,0,0,0.3); color: #fff; border: 1px solid rgba(255,255,255,0.2); border-radius: 6px; padding: 5px 8px; font-size: 0.85em; flex: 1; min-width: 110px;" />
+
+      <div id="rz_log_refresh_btn" class="button center" style="padding: 5px 10px; font-size: 0.85em; cursor: pointer;">Refresh</div>
+      <div id="rz_log_clear_btn" class="button center" style="padding: 5px 10px; font-size: 0.85em; cursor: pointer;">Clear</div>
     </div>
 
     <div class="dimc" style="margin-top: 10px;">
-      <textarea id="rz_log_display" readonly style="width: 100%; height: 180px; background: rgba(0,0,0,0.3); color: #00ff66; font-family: monospace; font-size: 0.8em; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 8px; resize: vertical; box-sizing: border-box;" placeholder="Logs will appear here when logging is enabled..."></textarea>
+      <div id="rz_log_console" style="width: 100%; height: 220px; background: #12141d; color: #f8f8f2; font-family: monospace; font-size: 0.78em; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 10px; overflow-y: auto; overflow-x: auto; box-sizing: border-border; line-height: 1.45; white-space: pre-wrap; word-break: break-all;">
+        <div style="color: #6272a4;">[ No logs recorded yet ]</div>
+      </div>
     </div>
   </div>
 
