@@ -27,47 +27,6 @@ struct Context {
   size_t len;
 };
 
-#define PROCESS_CACHE_SIZE 256
-
-struct process_cache_entry {
-  uid_t uid;
-  uint32_t flags;
-  char process[PROCESS_NAME_MAX_LEN];
-  bool valid;
-};
-
-static struct process_cache_entry process_cache[PROCESS_CACHE_SIZE];
-
-static size_t process_cache_hash(uid_t uid, const char *process) {
-  uint32_t hash = (uint32_t)uid;
-  for (const unsigned char *it = (const unsigned char *)process; *it; it++) {
-    hash = (hash * 33u) ^ *it;
-  }
-
-  return (size_t)(hash % (uint32_t)PROCESS_CACHE_SIZE);
-}
-
-static uint32_t process_cache_lookup(uid_t uid, const char *process) {
-  size_t idx = process_cache_hash(uid, process);
-  if (process_cache[idx].valid && process_cache[idx].uid == uid && strcmp(process_cache[idx].process, process) == 0) {
-    return process_cache[idx].flags;
-  }
-  return 0;
-}
-
-static bool process_cache_contains(uid_t uid, const char *process) {
-  size_t idx = process_cache_hash(uid, process);
-  return process_cache[idx].valid && process_cache[idx].uid == uid && strcmp(process_cache[idx].process, process) == 0;
-}
-
-static void process_cache_insert(uid_t uid, const char *process, uint32_t flags) {
-  size_t idx = process_cache_hash(uid, process);
-  process_cache[idx].uid = uid;
-  process_cache[idx].flags = flags;
-  snprintf(process_cache[idx].process, sizeof(process_cache[idx].process), "%s", process);
-  process_cache[idx].valid = true;
-}
-
 #define PATH_MODULES_DIR "/data/adb/modules"
 #define TMP_PATH "/data/adb/rezygisk"
 #define CONTROLLER_SOCKET TMP_PATH "/init_monitor"
@@ -436,9 +395,6 @@ void zygiskd_start(char *restrict argv[]) {
         }
 
         first_process = true;
-        for (size_t i = 0; i < PROCESS_CACHE_SIZE; i++) {
-          process_cache[i].valid = false;
-        }
 
         break;
       }
@@ -457,18 +413,14 @@ void zygiskd_start(char *restrict argv[]) {
         }
 
         uint32_t flags = 0;
-        bool from_cache = false;
 
         if (first_process) {
           flags |= PROCESS_IS_FIRST_STARTED;
 
           first_process = false;
-        } else if (process_cache_contains(uid, process)) {
-          flags = process_cache_lookup(uid, process);
-          from_cache = true;
-        }
-
-        if (!from_cache) {
+        } else {
+          // Root and denylist policy can change while zygotes stay alive. In particular, APatch
+          // reloads package_config when it changes, so caching this result defeats that reload.
           if (uid_is_manager(uid)) {
             flags |= PROCESS_IS_MANAGER;
           } else {
@@ -498,10 +450,6 @@ void zygiskd_start(char *restrict argv[]) {
 
               break;
             }
-          }
-
-          if ((flags & PROCESS_IS_FIRST_STARTED) == 0) {
-            process_cache_insert(uid, process, flags);
           }
         }
 
