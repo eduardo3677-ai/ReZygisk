@@ -835,6 +835,29 @@ bool wait_for_ptrace_syscall_stop(int pid, int *status) {
       continue;
     }
 
+    /* Some kernels surface the queued SIGCONT as a signal-delivery stop right
+       after the initial PTRACE_EVENT_STOP. Treat it like the previous stop and
+       retry the syscall-step instead of aborting the whole injection path. */
+    if (stop_sig == SIGCONT && stop_event == 0) {
+      if (step_retries++ >= 4) {
+        char status_str[64];
+        parse_status(*status, status_str, sizeof(status_str));
+        LOGE("Remote syscall stuck in SIGCONT delivery-stop: %s", status_str);
+
+        return false;
+      }
+
+      LOGV("Remote syscall got SIGCONT delivery-stop, retrying (retry %d)", step_retries);
+
+      if (ptrace(PTRACE_SYSCALL, pid, 0, 0) == -1) {
+        PLOGE("PTRACE_SYSCALL retry after SIGCONT");
+
+        return false;
+      }
+
+      continue;
+    }
+
     if (is_syscall_stop) return true;
 
     char status_str[64];
