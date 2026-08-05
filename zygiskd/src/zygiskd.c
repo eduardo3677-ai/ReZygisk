@@ -83,16 +83,34 @@ static void process_cache_insert(uid_t uid, uint32_t flags) {
 
 #ifdef __aarch64__
   #define ARCH_STR "arm64-v8a"
+  #define ALT_ARCH_STR "arm64"
 #elif __arm__
   #define ARCH_STR "armeabi-v7a"
+  #define ALT_ARCH_STR "arm"
 #elif __x86_64__
   #define ARCH_STR "x86_64"
+  #define ALT_ARCH_STR "x86_64"
 #elif __i386__
   #define ARCH_STR "x86"
+  #define ALT_ARCH_STR "x86"
 #else
   #error "Unsupported architecture"
   #define ARCH_STR "unknown"
+  #define ALT_ARCH_STR "unknown"
 #endif
+
+static bool get_module_so_path(const char *name, char *out_path, size_t max_len) {
+  snprintf(out_path, max_len, "/data/adb/modules/%s/zygisk/" ARCH_STR ".so", name);
+  if (access(out_path, R_OK) == 0) return true;
+
+  snprintf(out_path, max_len, "/data/adb/modules/%s/zygisk/" ALT_ARCH_STR ".so", name);
+  if (access(out_path, R_OK) == 0) return true;
+
+  snprintf(out_path, max_len, "/data/adb/modules/%s/zygisk/module.so", name);
+  if (access(out_path, R_OK) == 0) return true;
+
+  return false;
+}
 
 /* WARNING: Dynamic memory based */
 static void load_modules(struct Context *restrict context) {
@@ -110,19 +128,17 @@ static void load_modules(struct Context *restrict context) {
 
   struct dirent *entry;
   while ((entry = readdir(dir)) != NULL) {
-    if (entry->d_type != DT_DIR) continue; /* INFO: Only directories */
+    if (entry->d_type != DT_DIR && entry->d_type != DT_UNKNOWN) continue; /* INFO: Support DT_UNKNOWN on overlayfs/ext4 */
     if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0 || strcmp(entry->d_name, "rezygisk") == 0) continue;
 
     char *name = entry->d_name;
-    char so_path[PATH_MAX];
-    snprintf(so_path, PATH_MAX, "/data/adb/modules/%s/zygisk/" ARCH_STR ".so", name);
-
-    if (access(so_path, R_OK) == -1) continue;
 
     char disabled[PATH_MAX];
     snprintf(disabled, PATH_MAX, "/data/adb/modules/%s/disable", name);
-
     if (access(disabled, F_OK) == 0) continue;
+
+    char so_path[PATH_MAX];
+    if (!get_module_so_path(name, so_path, sizeof(so_path))) continue;
 
     int lib_fd = open(so_path, O_RDONLY | O_CLOEXEC);
     if (lib_fd == -1) {
@@ -535,7 +551,9 @@ void zygiskd_start(char *restrict argv[]) {
 
         for (size_t i = 0; i < clen; i++) {
           char lib_path[PATH_MAX];
-          snprintf(lib_path, PATH_MAX, "/data/adb/modules/%s/zygisk/" ARCH_STR ".so", context.modules[i].name);
+          if (!get_module_so_path(context.modules[i].name, lib_path, sizeof(lib_path))) {
+            snprintf(lib_path, sizeof(lib_path), "/data/adb/modules/%s/zygisk/" ARCH_STR ".so", context.modules[i].name);
+          }
 
           if (write_string(client_fd, lib_path) == -1) {
             LOGE("Failed writing module path.");
