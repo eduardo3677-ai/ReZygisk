@@ -26,6 +26,8 @@ static void *cb_connect_companion = NULL;
 static void *cb_set_option = NULL;
 static void *cb_get_module_dir = NULL;
 static void *cb_get_flags = NULL;
+static void *cb_plt_register_v4 = NULL;
+static void *cb_exempt_fd = NULL;
 
 static bool compat_unload_requested = false;
 
@@ -76,9 +78,19 @@ static void compat_plt_register(const char *regex, const char *symbol, void *new
     ((void (*)(const char *, const char *, void *, void **))cb_plt_register)(regex, symbol, newFunc, oldFunc);
 }
 
+static void compat_plt_register_v4(dev_t dev, ino_t inode, const char *symbol, void *newFunc, void **oldFunc) {
+  if (cb_plt_register_v4)
+    ((void (*)(dev_t, ino_t, const char *, void *, void **))cb_plt_register_v4)(dev, inode, symbol, newFunc, oldFunc);
+}
+
 static void compat_plt_exclude(const char *regex, const char *symbol) {
   if (cb_plt_exclude)
     ((void (*)(const char *, const char *))cb_plt_exclude)(regex, symbol);
+}
+
+static void compat_exempt_fd(int fd) {
+  if (cb_exempt_fd)
+    ((void (*)(int))cb_exempt_fd)(fd);
 }
 
 static bool compat_plt_commit(void) {
@@ -130,7 +142,9 @@ void zygisk_compat_set_callbacks(
   int (*connect_companion)(void *),
   void (*set_option)(void *, int),
   int (*get_module_dir)(void *),
-  uint32_t (*get_flags)(void)
+  uint32_t (*get_flags)(void),
+  void (*plt_register_v4)(dev_t, ino_t, const char *, void *, void **),
+  void (*exempt_fd)(int)
 ) {
   cb_hook_jni = (void *)hook_jni;
   cb_plt_register = (void *)plt_register;
@@ -140,12 +154,14 @@ void zygisk_compat_set_callbacks(
   cb_set_option = (void *)set_option;
   cb_get_module_dir = (void *)get_module_dir;
   cb_get_flags = (void *)get_flags;
+  cb_plt_register_v4 = (void *)plt_register_v4;
+  cb_exempt_fd = (void *)exempt_fd;
 
   compat_api_table.impl = NULL;
   compat_api_table.registerModule = compat_register_module;
   compat_api_table.hookJniNativeMethods = compat_hook_jni;
-  compat_api_table.pltHookRegister = compat_plt_register;
-  compat_api_table.pltHookExclude = compat_plt_exclude;
+  compat_api_table.pltHookRegister_v4 = compat_plt_register_v4;
+  compat_api_table.exemptFd = compat_exempt_fd;
   compat_api_table.pltHookCommit = compat_plt_commit;
   compat_api_table.connectCompanion = compat_connect_companion;
   compat_api_table.setOption = compat_set_option;

@@ -42,29 +42,12 @@ static uint32_t process_cache_lookup(uid_t uid) {
   if (process_cache[idx].valid && process_cache[idx].uid == uid) {
     return process_cache[idx].flags;
   }
-
-  for (size_t i = 0; i < PROCESS_CACHE_SIZE; i++) {
-    if (process_cache[i].valid && process_cache[i].uid == uid) {
-      return process_cache[i].flags;
-    }
-  }
-
   return 0;
 }
 
 static bool process_cache_contains(uid_t uid) {
   size_t idx = PROCESS_CACHE_HASH(uid);
-  if (process_cache[idx].valid && process_cache[idx].uid == uid) {
-    return true;
-  }
-
-  for (size_t i = 0; i < PROCESS_CACHE_SIZE; i++) {
-    if (process_cache[i].valid && process_cache[i].uid == uid) {
-      return true;
-    }
-  }
-
-  return false;
+  return process_cache[idx].valid && process_cache[idx].uid == uid;
 }
 
 static void process_cache_insert(uid_t uid, uint32_t flags) {

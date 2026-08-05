@@ -796,10 +796,14 @@ int save_mns_fd(int pid, enum MountNamespaceState mns_state, struct root_impl im
     if (read_uint8_t(socket_child, &has_opened) == -1)
       LOGE("Failed to read from socket_child: %s", strerror(errno));
 
+    close(socket_child);
+    /* INFO: Keep process alive to preserve mount namespace so ns_fd remains valid for setns */
+    while (1) pause();
+
     finalize_mns_fork:
       close(socket_child);
 
-      _exit(0);
+      _exit(1);
   }
 
   close(socket_child);
@@ -843,19 +847,7 @@ int save_mns_fd(int pid, enum MountNamespaceState mns_state, struct root_impl im
     return -1;
   }
 
-  if (close(socket_parent) == -1) {
-    LOGE("Failed to close socket_parent: %s", strerror(errno));
-
-    close(ns_fd);
-
-    return -1;
-  }
-
-  if (waitpid(fork_pid, NULL, 0) == -1) {
-    LOGE("waitpid: %s", strerror(errno));
-
-    return -1;
-  }
+  close(socket_parent);
 
   if (mns_state == Clean) clean_namespace_fd = ns_fd;
   else if (mns_state == Mounted) mounted_namespace_fd = ns_fd;

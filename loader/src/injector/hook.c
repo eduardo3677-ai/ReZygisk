@@ -999,7 +999,9 @@ static bool load_modules_only(void) {
     api_connect_companion,
     (void (*)(void *, int))api_set_option,
     api_get_module_dir,
-    (uint32_t (*)(void))api_get_flags
+    (uint32_t (*)(void))api_get_flags,
+    api_plt_hook_register_v4,
+    api_exempt_fd
   );
 
   JNIEnv *env = get_jni_env();
@@ -1077,17 +1079,20 @@ static void rz_run_modules_pre(struct zygisk_context *ctx) {
         .gid = ctx->args.app->gid,
         .gids = ctx->args.app->gids,
         .runtime_flags = ctx->args.app->runtime_flags,
+        .rlimits = ctx->args.app->rlimits,
         .mount_external = ctx->args.app->mount_external,
         .se_info = ctx->args.app->se_info,
         .nice_name = ctx->args.app->nice_name,
         .instruction_set = ctx->args.app->instruction_set,
         .app_data_dir = ctx->args.app->app_data_dir,
+        .fds_to_ignore = ctx->args.app->fds_to_ignore,
         .is_child_zygote = ctx->args.app->is_child_zygote,
         .is_top_app = ctx->args.app->is_top_app,
         .pkg_data_info_list = ctx->args.app->pkg_data_info_list,
         .whitelisted_data_info_list = ctx->args.app->whitelisted_data_info_list,
         .mount_data_dirs = ctx->args.app->mount_data_dirs,
         .mount_storage_dirs = ctx->args.app->mount_storage_dirs,
+        .mount_sysprop_overrides = ctx->args.app->mount_sysprop_overrides,
       };
       zygisk_compat_call_pre_app(&cargs);
     } else if (FLAG_GET(ctx, SERVER_FORK_AND_SPECIALIZE)) {
@@ -1106,17 +1111,20 @@ static void rz_run_modules_post(struct zygisk_context *ctx) {
         .gid = ctx->args.app->gid,
         .gids = ctx->args.app->gids,
         .runtime_flags = ctx->args.app->runtime_flags,
+        .rlimits = ctx->args.app->rlimits,
         .mount_external = ctx->args.app->mount_external,
         .se_info = ctx->args.app->se_info,
         .nice_name = ctx->args.app->nice_name,
         .instruction_set = ctx->args.app->instruction_set,
         .app_data_dir = ctx->args.app->app_data_dir,
+        .fds_to_ignore = ctx->args.app->fds_to_ignore,
         .is_child_zygote = ctx->args.app->is_child_zygote,
         .is_top_app = ctx->args.app->is_top_app,
         .pkg_data_info_list = ctx->args.app->pkg_data_info_list,
         .whitelisted_data_info_list = ctx->args.app->whitelisted_data_info_list,
         .mount_data_dirs = ctx->args.app->mount_data_dirs,
         .mount_storage_dirs = ctx->args.app->mount_storage_dirs,
+        .mount_sysprop_overrides = ctx->args.app->mount_sysprop_overrides,
       };
       zygisk_compat_call_post_app(&cargs);
     } else if (FLAG_GET(ctx, SERVER_FORK_AND_SPECIALIZE)) {

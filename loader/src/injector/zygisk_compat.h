@@ -26,11 +26,13 @@ struct zygisk_compat_app_specialize_args {
   jint *gid;
   jintArray *gids;
   jint *runtime_flags;
+  jobjectArray *rlimits;
   jint *mount_external;
   jstring *se_info;
   jstring *nice_name;
   jstring *instruction_set;
   jstring *app_data_dir;
+  jintArray *fds_to_ignore;
 
   jboolean *is_child_zygote;
   jboolean *is_top_app;
@@ -38,6 +40,7 @@ struct zygisk_compat_app_specialize_args {
   jobjectArray *whitelisted_data_info_list;
   jboolean *mount_data_dirs;
   jboolean *mount_storage_dirs;
+  jboolean *mount_sysprop_overrides;
 };
 
 struct zygisk_compat_server_specialize_args {
@@ -54,8 +57,14 @@ struct zygisk_compat_api_table {
   bool (*registerModule)(struct zygisk_compat_api_table *table, struct zygisk_compat_module_abi *abi);
 
   void (*hookJniNativeMethods)(JNIEnv *env, const char *className, JNINativeMethod *methods, int numMethods);
-  void (*pltHookRegister)(const char *regex, const char *symbol, void *newFunc, void **oldFunc);
-  void (*pltHookExclude)(const char *regex, const char *symbol);
+  union {
+    void (*pltHookRegister)(const char *regex, const char *symbol, void *newFunc, void **oldFunc);
+    void (*pltHookRegister_v4)(dev_t dev, ino_t inode, const char *symbol, void *newFunc, void **oldFunc);
+  };
+  union {
+    void (*pltHookExclude)(const char *regex, const char *symbol);
+    void (*exemptFd)(int fd);
+  };
   bool (*pltHookCommit)();
 
   int (*connectCompanion)(void *impl);
@@ -74,7 +83,9 @@ void zygisk_compat_set_callbacks(
   int (*connect_companion)(void *),
   void (*set_option)(void *, int),
   int (*get_module_dir)(void *),
-  uint32_t (*get_flags)(void)
+  uint32_t (*get_flags)(void),
+  void (*plt_register_v4)(dev_t, ino_t, const char *, void *, void **),
+  void (*exempt_fd)(int)
 );
 
 size_t zygisk_compat_get_count(void);
