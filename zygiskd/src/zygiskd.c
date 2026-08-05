@@ -411,6 +411,11 @@ void zygiskd_start(char *restrict argv[]) {
           context.modules[i].companion = -1;
         }
 
+        first_process = true;
+        for (size_t i = 0; i < PROCESS_CACHE_SIZE; i++) {
+          process_cache[i].valid = false;
+        }
+
         break;
       }
       case GetProcessFlags: {
@@ -641,6 +646,8 @@ void zygiskd_start(char *restrict argv[]) {
 
           break;
         }
+
+        close(fd);
 
         break;
       }

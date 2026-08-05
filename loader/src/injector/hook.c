@@ -1141,20 +1141,8 @@ static void rz_run_modules_post(struct zygisk_context *ctx) {
       else if (FLAG_GET(ctx, SERVER_FORK_AND_SPECIALIZE)) rz_module_call_post_server_specialize(m, ctx->args.server);
     }
 
-    if (!m->unload) {
-      LOGD("Abandoning module library at %p", &m->lib);
-
-      csoloader_abandon(&m->lib);
-
-      continue;
-    }
-
-    if (!csoloader_unload(&m->lib)) {
-      LOGE("Failed to unload module library");
-
-      continue;
-    }
-
+    LOGD("Abandoning module library at %p", &m->lib);
+    csoloader_abandon(&m->lib);
     modules_unloaded++;
   }
 
