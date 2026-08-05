@@ -4,7 +4,10 @@ export function loadNavbar() {
   document.getElementById('nibg_home').classList.add('show')
 }
 
+let activePage = null
+
 export function setNavbar(page) {
+  activePage = page
   if (allMiniPages.includes(page)) {
     allPages.forEach((p) => {
       const el = document.getElementById(`n_${p}`)
@@ -33,12 +36,7 @@ export function setNavbar(page) {
 }
 
 export function whichCurrentPage() {
-  for (const page of allPages) {
-    const el = document.getElementById(`n_${page}`)
-    if (el && el.checked) return page
-  }
-
-  return null
+  return activePage
 }
 
 document.querySelectorAll('[name=navbutton]').forEach((element) => {
